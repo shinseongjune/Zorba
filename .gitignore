@@ -4,6 +4,9 @@
 # Codex local workspace settings
 .codex/
 
+# Local backup for plugins disabled because they do not compile with this engine
+.disabled-plugins/
+
 # Compiled Object files
 *.slo
 *.lo

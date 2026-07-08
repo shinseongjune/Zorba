@@ -17,6 +17,9 @@ public:
 	UFUNCTION(Client, Reliable, BlueprintCallable, Category = "Zorba|Player")
 	void ClientReceiveSystemMessage(const FString& Message);
 
+	UFUNCTION(BlueprintCallable, Category = "Zorba|Player")
+	void TogglePause();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
