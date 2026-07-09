@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Player/ZorbaPlayerController.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "EnhancedInputComponent.h"
@@ -62,6 +63,18 @@ AZorbaCharacter::AZorbaCharacter()
 void AZorbaCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	DefaultPawnCollisionResponse = GetCapsuleComponent()->GetCollisionResponseToChannel(ECC_Pawn);
+}
+
+void AZorbaCharacter::NotifyActorBeginOverlap(AActor* OtherActor)
+{
+	Super::NotifyActorBeginOverlap(OtherActor);
+
+	if (bIsInDarkForm && OtherActor && OtherActor != this)
+	{
+		OnDarkFormPassedThroughActor(OtherActor);
+	}
 }
 
 void AZorbaCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -147,9 +160,9 @@ void AZorbaCharacter::BindEnhancedInput(UInputComponent* PlayerInputComponent)
 		EnhancedInputComponent->BindAction(DodgeAction, ETriggerEvent::Started, this, &AZorbaCharacter::RequestDodge);
 	}
 
-	if (ProfaneDashAction)
+	if (DarkFormAction)
 	{
-		EnhancedInputComponent->BindAction(ProfaneDashAction, ETriggerEvent::Started, this, &AZorbaCharacter::RequestProfaneDash);
+		EnhancedInputComponent->BindAction(DarkFormAction, ETriggerEvent::Started, this, &AZorbaCharacter::RequestDarkForm);
 	}
 
 	if (SprintAction)
@@ -204,11 +217,6 @@ void AZorbaCharacter::BindEnhancedInput(UInputComponent* PlayerInputComponent)
 	if (ShowObjectiveAction)
 	{
 		EnhancedInputComponent->BindAction(ShowObjectiveAction, ETriggerEvent::Started, this, &AZorbaCharacter::ShowObjective);
-	}
-
-	if (CameraResetAction)
-	{
-		EnhancedInputComponent->BindAction(CameraResetAction, ETriggerEvent::Started, this, &AZorbaCharacter::ResetCamera);
 	}
 
 	if (PauseAction)
@@ -356,8 +364,13 @@ void AZorbaCharacter::SetSprinting(bool bNewIsSprinting)
 	}
 
 	bIsSprinting = bNewIsSprinting;
-	GetCharacterMovement()->MaxWalkSpeed = bIsSprinting ? SprintSpeed : WalkSpeed;
+	ApplyCurrentMovementSpeed();
 	UE_LOG(LogTemp, Log, TEXT("Sprint %s."), bIsSprinting ? TEXT("started") : TEXT("stopped"));
+}
+
+void AZorbaCharacter::ApplyCurrentMovementSpeed()
+{
+	GetCharacterMovement()->MaxWalkSpeed = bIsInDarkForm ? DarkFormSpeed : (bIsSprinting ? SprintSpeed : WalkSpeed);
 }
 
 void AZorbaCharacter::StartAbilityLayer()
@@ -415,7 +428,7 @@ void AZorbaCharacter::RequestDodge()
 	OnDodgeRequested();
 }
 
-void AZorbaCharacter::RequestProfaneDash()
+void AZorbaCharacter::RequestDarkForm()
 {
 	if (TryRouteAbilityLayerFaceButton(2))
 	{
@@ -424,22 +437,44 @@ void AZorbaCharacter::RequestProfaneDash()
 
 	const UWorld* World = GetWorld();
 	const float CurrentTime = World ? World->GetTimeSeconds() : 0.0f;
-	const float CooldownRemaining = ProfaneDashCooldown - (CurrentTime - LastProfaneDashTime);
+	const float CooldownRemaining = DarkFormCooldown - (CurrentTime - LastDarkFormTime);
 
-	if (CooldownRemaining > 0.0f)
+	if (bIsInDarkForm || CooldownRemaining > 0.0f)
 	{
-		UE_LOG(LogTemp, Log, TEXT("Profane dash denied. Cooldown remaining: %.2f"), CooldownRemaining);
-		OnProfaneDashDenied();
+		UE_LOG(LogTemp, Log, TEXT("Dark form denied. Cooldown remaining: %.2f"), FMath::Max(0.0f, CooldownRemaining));
+		OnDarkFormDenied();
 		return;
 	}
 
 	FaceCameraYaw();
-	LaunchCharacter(GetActorForwardVector() * ProfaneDashStrength, true, false);
 
-	LastProfaneDashTime = CurrentTime;
+	bIsInDarkForm = true;
+	LastDarkFormTime = CurrentTime;
+	ApplyCurrentMovementSpeed();
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 
-	UE_LOG(LogTemp, Log, TEXT("Profane dash requested."));
-	OnProfaneDashRequested();
+	if (World)
+	{
+		World->GetTimerManager().SetTimer(DarkFormTimerHandle, this, &AZorbaCharacter::FinishDarkForm, DarkFormDuration, false);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Dark form started."));
+	OnDarkFormStarted();
+}
+
+void AZorbaCharacter::FinishDarkForm()
+{
+	if (!bIsInDarkForm)
+	{
+		return;
+	}
+
+	bIsInDarkForm = false;
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, DefaultPawnCollisionResponse);
+	ApplyCurrentMovementSpeed();
+
+	UE_LOG(LogTemp, Log, TEXT("Dark form ended."));
+	OnDarkFormEnded();
 }
 
 void AZorbaCharacter::RequestContextAction()
@@ -510,16 +545,6 @@ void AZorbaCharacter::RequestRelic()
 void AZorbaCharacter::ShowObjective()
 {
 	UE_LOG(LogTemp, Log, TEXT("Show objective requested."));
-}
-
-void AZorbaCharacter::ResetCamera()
-{
-	if (Controller == nullptr)
-	{
-		return;
-	}
-
-	Controller->SetControlRotation(FRotator(-15.0f, GetActorRotation().Yaw, 0.0f));
 }
 
 void AZorbaCharacter::RequestPause()

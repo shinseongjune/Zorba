@@ -8,7 +8,7 @@
 
 `DefaultInput.ini`에는 Enhanced Input을 쓰기 위한 엔진 설정만 남깁니다. 이동, 공격, 회피, 패드 버튼 같은 실제 키 배치는 `IMC_Gameplay`에서만 관리합니다.
 
-현재 C++ `ZorbaCharacter`는 이미 Enhanced Input 에셋을 받을 준비가 되어 있습니다. 해야 할 일은 에디터에서 에셋을 만들고 `BP_ZorbaCharacter`에 연결하는 것입니다.
+현재 프로젝트의 런타임 경로는 `BP_ZorbaGameMode -> BP_ZorbaCharacter -> IMC_Gameplay/IA_*`입니다. 키와 버튼 배치는 `IMC_Gameplay`만 고치고, `DefaultInput.ini`나 C++에 같은 키 배치를 다시 만들지 않습니다.
 
 ## 1단계 - 입력 폴더 만들기
 
@@ -42,7 +42,7 @@ Input > Input Action
 | `IA_HeavyAttack` | Boolean |
 | `IA_Defend` | Boolean |
 | `IA_Dodge` | Boolean |
-| `IA_ProfaneDash` | Boolean |
+| `IA_DarkForm` | Boolean |
 | `IA_Sprint` | Boolean |
 | `IA_AbilityLayer` | Boolean |
 | `IA_ContextAction` | Boolean |
@@ -53,12 +53,13 @@ Input > Input Action
 | `IA_UseAbilitySlot4` | Boolean |
 | `IA_UseRelic` | Boolean |
 | `IA_ShowObjective` | Boolean |
-| `IA_CameraReset` | Boolean |
 | `IA_Pause` | Boolean |
 
 `IA_Look`은 마우스용입니다. `IA_LookRate`는 패드 오른쪽 스틱용입니다. 둘을 나누면 마우스와 패드 감도를 따로 다루기 쉽습니다.
 
 `IA_Pause`는 에셋을 연 뒤 Details에서 **Trigger When Paused**를 켭니다. 그래야 일시정지 상태에서도 같은 입력으로 다시 해제할 수 있습니다.
+
+카메라 리셋 액션은 현재 입력 세트에서 제외합니다. 마우스 휠 클릭은 강공격에 사용합니다.
 
 ## 3단계 - Mapping Context 만들기
 
@@ -83,12 +84,12 @@ IMC_Gameplay
 | Input Action | 키 |
 | --- | --- |
 | `IA_Move` | W, A, S, D |
-| `IA_Look` | Mouse XY 2D-Axis |
+| `IA_Look` | Mouse XY 2D-Axis, Y-axis Negate |
 | `IA_PrimaryAttack` | Left Mouse Button |
-| `IA_HeavyAttack` | Mouse Button 4 |
+| `IA_HeavyAttack` | Middle Mouse Button |
 | `IA_Defend` | Right Mouse Button |
 | `IA_Dodge` | Space Bar |
-| `IA_ProfaneDash` | Left Ctrl |
+| `IA_DarkForm` | Left Ctrl |
 | `IA_Sprint` | Left Shift |
 | `IA_ContextAction` | E |
 | `IA_ClassAction` | Q |
@@ -98,7 +99,6 @@ IMC_Gameplay
 | `IA_UseAbilitySlot4` | 4 |
 | `IA_UseRelic` | F |
 | `IA_ShowObjective` | T |
-| `IA_CameraReset` | Middle Mouse Button |
 | `IA_Pause` | Escape |
 
 `IA_Move`에서 WASD를 2D로 만들 때는 보통 다음처럼 잡습니다.
@@ -124,17 +124,16 @@ A = X -1
 | `IA_HeavyAttack` | Gamepad Right Shoulder |
 | `IA_Defend` | Gamepad Left Shoulder |
 | `IA_Dodge` | Gamepad Face Button Bottom |
-| `IA_ProfaneDash` | Gamepad Face Button Right |
+| `IA_DarkForm` | Gamepad Face Button Right |
 | `IA_Sprint` | Gamepad Left Thumbstick |
-| `IA_AbilityLayer` | Gamepad Left Trigger |
+| `IA_AbilityLayer` | Gamepad Left Trigger, Gamepad Left Trigger Axis |
 | `IA_ContextAction` | Gamepad Face Button Left |
 | `IA_ClassAction` | Gamepad Face Button Top |
 | `IA_UseRelic` | Gamepad D-pad Down |
 | `IA_ShowObjective` | Gamepad D-pad Up |
-| `IA_CameraReset` | Gamepad Right Thumbstick |
 | `IA_Pause` | Gamepad Special Right |
 
-기술 4개는 최종적으로 `LT + A/B/X/Y` 조합으로 갑니다. 현재 C++에서는 `IA_AbilityLayer`가 눌린 상태를 기억한 뒤, A/B/X/Y 기본 액션을 기술 슬롯으로 돌려보내는 방식으로 처리합니다.
+금단 기술 4개는 최종적으로 `LT + A/B/X/Y` 조합으로 갑니다. 어둠의 형상은 그 4슬롯과 별도이며, `B / Circle` 자체에 남습니다. 현재 C++에서는 `IA_AbilityLayer`가 눌린 상태를 기억한 뒤, A/B/X/Y 기본 액션을 금단 기술 슬롯으로 돌려보내는 방식으로 처리합니다.
 
 스프린트 규칙:
 
@@ -145,9 +144,9 @@ Sprint를 누른 상태로 이동을 시작하면 달림
 이동 입력이 끝나면 달리기는 자동 off
 ```
 
-## 5-1단계 - LT + 얼굴 버튼 기술 조합 만들기
+## 5-1단계 - LT + 얼굴 버튼 금단 기술 조합 만들기
 
-기술 레이어용 Input Action은 이미 위 표에 포함되어 있습니다.
+액티브 레이어용 Input Action은 이미 위 표에 포함되어 있습니다.
 
 | 이름 | Value Type |
 | --- | --- |
@@ -157,9 +156,9 @@ Sprint를 누른 상태로 이동을 시작하면 달림
 
 | Input Action | 패드 |
 | --- | --- |
-| `IA_AbilityLayer` | Gamepad Left Trigger |
+| `IA_AbilityLayer` | Gamepad Left Trigger, Gamepad Left Trigger Axis |
 
-그 다음에는 얼굴 버튼을 따로 기술 슬롯에 매핑하지 않습니다. A/B/X/Y는 기존 기본 액션에 그대로 둡니다.
+그 다음에는 얼굴 버튼을 따로 금단 기술 슬롯에 매핑하지 않습니다. A/B/X/Y는 기존 기본 액션에 그대로 둡니다.
 
 현재 코드의 처리 방식:
 
@@ -168,7 +167,8 @@ LT / L2 누름 = IA_AbilityLayer 시작
 A / Cross 입력 = 원래는 Dodge
 하지만 AbilityLayer가 눌려 있으면 Dodge 대신 Ability Slot 1 요청
 
-B / Circle 입력 = Ability Slot 2
+B / Circle 입력 = 원래는 DarkForm
+하지만 AbilityLayer가 눌려 있으면 DarkForm 대신 Ability Slot 2 요청
 X / Square 입력 = Ability Slot 3
 Y / Triangle 입력 = Ability Slot 4
 ```
@@ -181,6 +181,8 @@ Y / Triangle 입력 = Ability Slot 4
 - `IA_UseAbilitySlot1~4`는 반드시 `BP_ZorbaCharacter`의 `Zorba|Input`에 연결해야 합니다.
 - 패드에서는 `IA_UseAbilitySlot1~4`에 얼굴 버튼을 추가하지 않는 편이 좋습니다. 키보드의 숫자 1~4용으로만 써도 됩니다.
 - 만약 예전에 `IA_UseAbilitySlot1~4`에 Chorded Action을 넣었다면, 일단 그 패드 매핑은 지우고 테스트하세요.
+
+디자인상 `IA_UseAbilitySlot1~4`는 전부 금단 기술 슬롯입니다. 신성한 계율은 방어, 패리, 회피, 강공격 같은 기본 공방 입력 위에 붙습니다.
 
 ## 6단계 - BP_ZorbaCharacter 만들기
 
@@ -210,7 +212,7 @@ Y / Triangle 입력 = Ability Slot 4
 | `Heavy Attack Action` | `IA_HeavyAttack` |
 | `Defend Action` | `IA_Defend` |
 | `Dodge Action` | `IA_Dodge` |
-| `Profane Dash Action` | `IA_ProfaneDash` |
+| `Dark Form Action` | `IA_DarkForm` |
 | `Sprint Action` | `IA_Sprint` |
 | `Ability Layer Action` | `IA_AbilityLayer` |
 | `Context Action Input` | `IA_ContextAction` |
@@ -221,12 +223,13 @@ Y / Triangle 입력 = Ability Slot 4
 | `Use Ability Slot 4 Action` | `IA_UseAbilitySlot4` |
 | `Use Relic Action` | `IA_UseRelic` |
 | `Show Objective Action` | `IA_ShowObjective` |
-| `Camera Reset Action` | `IA_CameraReset` |
 | `Pause Action` | `IA_Pause` |
 
 저장하고 컴파일합니다.
 
 ## 8단계 - GameMode가 BP_ZorbaCharacter를 쓰게 하기
+
+현재 프로젝트에는 `BP_ZorbaGameMode`가 있으며, `Config/DefaultEngine.ini`의 `GlobalDefaultGameMode`도 이 블루프린트를 가리킵니다.
 
 1. `Content/00_Core/Blueprints`에서 우클릭합니다.
 2. **Blueprint Class**를 선택합니다.

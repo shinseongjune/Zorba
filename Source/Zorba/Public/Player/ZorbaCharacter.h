@@ -3,7 +3,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/EngineTypes.h"
 #include "GameFramework/Character.h"
+#include "TimerManager.h"
 #include "ZorbaCharacter.generated.h"
 
 class UCameraComponent;
@@ -25,6 +27,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void NotifyActorBeginOverlap(AActor* OtherActor) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zorba|Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -66,7 +69,7 @@ protected:
 	TObjectPtr<UInputAction> DodgeAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Input")
-	TObjectPtr<UInputAction> ProfaneDashAction;
+	TObjectPtr<UInputAction> DarkFormAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Input")
 	TObjectPtr<UInputAction> SprintAction;
@@ -99,9 +102,6 @@ protected:
 	TObjectPtr<UInputAction> ShowObjectiveAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Input")
-	TObjectPtr<UInputAction> CameraResetAction;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Input")
 	TObjectPtr<UInputAction> PauseAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Movement")
@@ -114,10 +114,13 @@ protected:
 	float DodgeStrength = 650.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Movement")
-	float ProfaneDashStrength = 1400.0f;
+	float DarkFormSpeed = 1400.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Movement")
-	float ProfaneDashCooldown = 4.0f;
+	float DarkFormDuration = 0.8f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Movement")
+	float DarkFormCooldown = 4.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Camera")
 	float GamepadTurnRate = 140.0f;
@@ -141,10 +144,16 @@ protected:
 	void OnDodgeRequested();
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
-	void OnProfaneDashRequested();
+	void OnDarkFormStarted();
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
-	void OnProfaneDashDenied();
+	void OnDarkFormEnded();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
+	void OnDarkFormDenied();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
+	void OnDarkFormPassedThroughActor(AActor* OtherActor);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
 	void OnContextActionRequested();
@@ -178,6 +187,7 @@ private:
 	void StopSprintInput();
 	void RefreshSprintState();
 	void SetSprinting(bool bNewIsSprinting);
+	void ApplyCurrentMovementSpeed();
 	void StartAbilityLayer();
 	void StopAbilityLayer();
 	void RequestPrimaryAttack();
@@ -185,7 +195,8 @@ private:
 	void StartDefend();
 	void StopDefend();
 	void RequestDodge();
-	void RequestProfaneDash();
+	void RequestDarkForm();
+	void FinishDarkForm();
 	void RequestContextAction();
 	void RequestClassAction();
 	void RequestAbilitySlot1();
@@ -196,7 +207,6 @@ private:
 	bool TryRouteAbilityLayerFaceButton(int32 SlotIndex);
 	void RequestRelic();
 	void ShowObjective();
-	void ResetCamera();
 	void RequestPause();
 
 	bool bIsSprinting = false;
@@ -204,5 +214,8 @@ private:
 	bool bSprintInputHeld = false;
 	bool bSprintToggledOn = false;
 	bool bAbilityLayerHeld = false;
-	float LastProfaneDashTime = -1000.0f;
+	bool bIsInDarkForm = false;
+	float LastDarkFormTime = -1000.0f;
+	FTimerHandle DarkFormTimerHandle;
+	ECollisionResponse DefaultPawnCollisionResponse = ECR_Block;
 };
