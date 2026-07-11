@@ -12,6 +12,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "EnhancedPlayerInput.h"
 #include "InputActionValue.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -416,15 +417,48 @@ void AZorbaCharacter::RequestDodge()
 		return;
 	}
 
-	FVector DodgeDirection = GetLastMovementInputVector();
+	FVector DodgeDirection = FVector::ZeroVector;
+	bool bReadCurrentMoveAction = false;
+
+	if (MoveAction)
+	{
+		if (const APlayerController* PlayerController = Cast<APlayerController>(Controller))
+		{
+			if (const UEnhancedPlayerInput* EnhancedPlayerInput = Cast<UEnhancedPlayerInput>(PlayerController->PlayerInput))
+			{
+				bReadCurrentMoveAction = true;
+
+				const FVector2D MoveInput = EnhancedPlayerInput->GetActionValue(MoveAction).Get<FVector2D>();
+				if (!MoveInput.IsNearlyZero())
+				{
+					const FRotator YawRotation(0.0f, Controller->GetControlRotation().Yaw, 0.0f);
+					const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+					const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+					DodgeDirection = ForwardDirection * MoveInput.Y + RightDirection * MoveInput.X;
+				}
+			}
+		}
+	}
+
+	if (!bReadCurrentMoveAction)
+	{
+		DodgeDirection = GetPendingMovementInputVector();
+		if (DodgeDirection.IsNearlyZero())
+		{
+			DodgeDirection = GetLastMovementInputVector();
+		}
+	}
+
 	if (DodgeDirection.IsNearlyZero())
 	{
 		DodgeDirection = GetActorForwardVector();
 	}
 
-	LaunchCharacter(DodgeDirection.GetSafeNormal() * DodgeStrength, true, false);
+	DodgeDirection.Z = 0.0f;
+	DodgeDirection = DodgeDirection.GetSafeNormal();
+	LaunchCharacter(DodgeDirection * DodgeStrength, true, false);
 
-	UE_LOG(LogTemp, Log, TEXT("Dodge requested."));
+	UE_LOG(LogTemp, Log, TEXT("Dodge requested. Direction=(%.2f, %.2f, %.2f)"), DodgeDirection.X, DodgeDirection.Y, DodgeDirection.Z);
 	OnDodgeRequested();
 }
 
