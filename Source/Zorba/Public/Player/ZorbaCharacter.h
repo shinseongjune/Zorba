@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "AbilitySystemInterface.h"
 #include "CoreMinimal.h"
 #include "Engine/EngineTypes.h"
 #include "GameFramework/Character.h"
@@ -9,6 +10,7 @@
 #include "ZorbaCharacter.generated.h"
 
 class UCameraComponent;
+class UAbilitySystemComponent;
 class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
@@ -16,13 +18,16 @@ class UStaticMeshComponent;
 struct FInputActionValue;
 
 UCLASS()
-class ZORBA_API AZorbaCharacter : public ACharacter
+class ZORBA_API AZorbaCharacter : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
 public:
 	AZorbaCharacter();
 
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void OnRep_PlayerState() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 protected:
@@ -168,6 +173,7 @@ protected:
 	void OnRelicRequested();
 
 private:
+	void InitializeAbilitySystem();
 	void AddDefaultMappingContext();
 	void BindEnhancedInput(UInputComponent* PlayerInputComponent);
 

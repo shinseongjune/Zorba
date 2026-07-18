@@ -2,11 +2,13 @@
 
 #include "Player/ZorbaCharacter.h"
 
+#include "AbilitySystemComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Player/ZorbaPlayerController.h"
+#include "Player/ZorbaPlayerState.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -58,6 +60,39 @@ AZorbaCharacter::AZorbaCharacter()
 	{
 		DebugBodyMesh->SetStaticMesh(CubeMesh.Object);
 		DebugFacingMesh->SetStaticMesh(CubeMesh.Object);
+	}
+}
+
+UAbilitySystemComponent* AZorbaCharacter::GetAbilitySystemComponent() const
+{
+	if (const AZorbaPlayerState* ZorbaPlayerState = GetPlayerState<AZorbaPlayerState>())
+	{
+		return ZorbaPlayerState->GetAbilitySystemComponent();
+	}
+
+	return nullptr;
+}
+
+void AZorbaCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	InitializeAbilitySystem();
+}
+
+void AZorbaCharacter::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+	InitializeAbilitySystem();
+}
+
+void AZorbaCharacter::InitializeAbilitySystem()
+{
+	if (AZorbaPlayerState* ZorbaPlayerState = GetPlayerState<AZorbaPlayerState>())
+	{
+		if (UAbilitySystemComponent* AbilitySystem = ZorbaPlayerState->GetAbilitySystemComponent())
+		{
+			AbilitySystem->InitAbilityActorInfo(ZorbaPlayerState, this);
+		}
 	}
 }
 

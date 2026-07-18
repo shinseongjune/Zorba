@@ -2,11 +2,24 @@
 
 #include "Player/ZorbaPlayerState.h"
 
+#include "AbilitySystemComponent.h"
+#include "Combat/ZorbaCombatAttributeSet.h"
 #include "Net/UnrealNetwork.h"
 
 AZorbaPlayerState::AZorbaPlayerState()
 {
 	bReplicates = true;
+
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent->SetIsReplicated(true);
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+
+	CombatAttributes = CreateDefaultSubobject<UZorbaCombatAttributeSet>(TEXT("CombatAttributes"));
+}
+
+UAbilitySystemComponent* AZorbaPlayerState::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
 }
 
 void AZorbaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
