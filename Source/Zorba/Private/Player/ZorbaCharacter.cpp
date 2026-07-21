@@ -17,11 +17,17 @@
 #include "EnhancedPlayerInput.h"
 #include "InputActionValue.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Combat/ZorbaAttackDefinition.h"
+#include "Combat/ZorbaMeleeCombatComponent.h"
 
 AZorbaCharacter::AZorbaCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
+
+	MeleeCombatComponent =
+		CreateDefaultSubobject<UZorbaMeleeCombatComponent>(
+			TEXT("MeleeCombatComponent"));
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
@@ -363,6 +369,117 @@ void AZorbaCharacter::FaceCameraYaw()
 	SetActorRotation(FRotator(0.0f, Controller->GetControlRotation().Yaw, 0.0f));
 }
 
+FVector AZorbaCharacter::ResolveAttackDirection() const
+{
+	FVector ActorForward = GetActorForwardVector();
+	ActorForward.Z = 0.0f;
+	ActorForward = ActorForward.GetSafeNormal();
+
+	if (ActorForward.IsNearlyZero())
+	{
+		ActorForward = FVector::ForwardVector;
+	}
+
+	if (!IsValid(PrimaryAttackDefinition))
+	{
+		return ActorForward;
+	}
+
+	if (PrimaryAttackDefinition->DirectionPolicy
+		== EZorbaAttackDirectionPolicy::FacingOnly)
+	{
+		return ActorForward;
+	}
+
+	FVector2D MoveInput = FVector2D::ZeroVector;
+
+	if (MoveAction)
+	{
+		if (const APlayerController* PlayerController =
+			Cast<APlayerController>(Controller))
+		{
+			if (const UEnhancedPlayerInput* EnhancedPlayerInput =
+				Cast<UEnhancedPlayerInput>(
+					PlayerController->PlayerInput))
+			{
+				MoveInput =
+					EnhancedPlayerInput
+					->GetActionValue(MoveAction)
+					.Get<FVector2D>();
+			}
+		}
+	}
+
+	// 현재 방향 입력이 없으면 이전 이동 방향이나 카메라를 사용하지 않는다.
+	if (MoveInput.IsNearlyZero(0.1f))
+	{
+		return ActorForward;
+	}
+
+	const FVector Up = FVector::UpVector;
+
+	FVector GroundForward = ActorForward;
+	FVector GroundRight = GetActorRightVector().GetSafeNormal2D();
+
+	if (FollowCamera)
+	{
+		const FVector CameraForward =
+			FollowCamera->GetForwardVector();
+
+		const FVector CameraRight =
+			FollowCamera->GetRightVector();
+
+		GroundForward =
+			FVector::VectorPlaneProject(CameraForward, Up);
+
+		GroundRight =
+			FVector::VectorPlaneProject(CameraRight, Up);
+
+		// 정수리 시점에서는 CameraForward의 수평 투영이 0에 가까워진다.
+		if (GroundForward.SizeSquared()
+			< FMath::Square(0.05f))
+		{
+			if (GroundRight.Normalize())
+			{
+				// 정수리에서 카메라를 살짝 내렸을 때와 같은 전방.
+				GroundForward =
+					FVector::CrossProduct(
+						GroundRight,
+						Up).GetSafeNormal();
+			}
+			else
+			{
+				GroundForward = ActorForward;
+			}
+		}
+		else
+		{
+			GroundForward.Normalize();
+		}
+	}
+
+	if (GroundForward.IsNearlyZero())
+	{
+		GroundForward = ActorForward;
+	}
+
+	GroundRight =
+		FVector::CrossProduct(
+			Up,
+			GroundForward).GetSafeNormal();
+
+	FVector AttackDirection =
+		GroundForward * MoveInput.Y
+		+ GroundRight * MoveInput.X;
+
+	AttackDirection.Z = 0.0f;
+	AttackDirection = AttackDirection.GetSafeNormal();
+
+	return AttackDirection.IsNearlyZero()
+		? ActorForward
+		: AttackDirection;
+}
+
 void AZorbaCharacter::StartSprintInput()
 {
 	bSprintInputHeld = true;
@@ -423,7 +540,40 @@ void AZorbaCharacter::StopAbilityLayer()
 
 void AZorbaCharacter::RequestPrimaryAttack()
 {
-	UE_LOG(LogTemp, Log, TEXT("Primary attack requested."));
+	if (!IsValid(PrimaryAttackDefinition))
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("Primary attack rejected: PrimaryAttackDefinition is missing."));
+		return;
+	}
+
+	if (!MeleeCombatComponent)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("Primary attack rejected: MeleeCombatComponent is missing."));
+		return;
+	}
+
+	const FVector AttackDirection =
+		ResolveAttackDirection();
+
+	if (!MeleeCombatComponent->BeginAttack(
+		PrimaryAttackDefinition,
+		AttackDirection))
+	{
+		return;
+	}
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("Primary attack requested. Direction: %s"),
+		*AttackDirection.ToCompactString());
+
 	OnPrimaryAttackRequested();
 }
 

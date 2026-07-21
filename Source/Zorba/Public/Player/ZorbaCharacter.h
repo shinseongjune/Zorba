@@ -16,6 +16,8 @@ class UInputMappingContext;
 class USpringArmComponent;
 class UStaticMeshComponent;
 struct FInputActionValue;
+class UZorbaAttackDefinition;
+class UZorbaMeleeCombatComponent;
 
 UCLASS()
 class ZORBA_API AZorbaCharacter : public ACharacter, public IAbilitySystemInterface
@@ -39,6 +41,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zorba|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zorba|Combat")
+	TObjectPtr<UZorbaMeleeCombatComponent> MeleeCombatComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat")
+	TObjectPtr<UZorbaAttackDefinition> PrimaryAttackDefinition;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zorba|Debug")
 	TObjectPtr<UStaticMeshComponent> DebugBodyMesh;
@@ -188,6 +196,7 @@ private:
 	void TurnAtRate(float Value);
 	void LookUpAtRate(float Value);
 	void FaceCameraYaw();
+	FVector ResolveAttackDirection() const;
 
 	void StartSprintInput();
 	void StopSprintInput();

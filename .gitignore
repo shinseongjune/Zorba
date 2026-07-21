@@ -4,6 +4,11 @@
 # Codex local workspace settings
 .codex/
 
+# Locally licensed Fab content must not be redistributed through this public repository
+/Content/SwordAndShieldAnimationV1/
+/Content/90_ExternalAssets/Marketplace/**/SwordAndShieldAnimationV1/
+/Content/10_Player/Animations/Combat/SwordShield/_RetargetTest/
+
 # Local backup for plugins disabled because they do not compile with this engine
 .disabled-plugins/
 

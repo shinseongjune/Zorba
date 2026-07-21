@@ -49,10 +49,7 @@ Zorba는 **패드 우선**으로 설계하고, 그 다음 키보드/마우스로
 
 - [게임 방향성](Docs/Design/GameDirection.md)
 - [조작과 입력](Docs/Design/ControlsAndInput.md)
-- [버티컬 슬라이스 계획](Docs/Production/VerticalSlicePlan.md)
-- [버티컬 슬라이스 체크리스트](Docs/Production/VerticalSliceChecklist.md)
-- [첫 슬라이스 작업 해설](Docs/Production/FirstSliceWalkthrough.md)
-- [Enhanced Input 설정 순서](Docs/Production/EnhancedInputSetup.md)
+- [현재 제작 체크리스트](Docs/Production/VerticalSliceChecklist.md)
 
 ## 언리얼 참고
 
