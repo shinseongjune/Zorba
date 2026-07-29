@@ -3,9 +3,11 @@
 #pragma once
 
 #include "AbilitySystemInterface.h"
+#include "Combat/ZorbaAttackDefinition.h"
 #include "CoreMinimal.h"
 #include "Engine/EngineTypes.h"
 #include "GameFramework/Character.h"
+#include "GenericTeamAgentInterface.h"
 #include "TimerManager.h"
 #include "ZorbaCharacter.generated.h"
 
@@ -16,11 +18,13 @@ class UInputMappingContext;
 class USpringArmComponent;
 class UStaticMeshComponent;
 struct FInputActionValue;
-class UZorbaAttackDefinition;
 class UZorbaMeleeCombatComponent;
 
 UCLASS()
-class ZORBA_API AZorbaCharacter : public ACharacter, public IAbilitySystemInterface
+class ZORBA_API AZorbaCharacter :
+	public ACharacter,
+	public IAbilitySystemInterface,
+	public IGenericTeamAgentInterface
 {
 	GENERATED_BODY()
 
@@ -28,9 +32,35 @@ public:
 	AZorbaCharacter();
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual FGenericTeamId GetGenericTeamId() const override
+	{
+		return FGenericTeamId(0);
+	}
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void Tick(float DeltaSeconds) override;
+
+	EZorbaMeleeDefenseResult ResolveIncomingMeleeHit(
+		AActor* SourceActor,
+		const FHitResult& HitResult,
+		const UZorbaAttackDefinition* IncomingAttack,
+		float& InOutHealthDamage,
+		float& InOutStaminaDamage,
+		float& OutParryStaminaDamage);
+
+	void HandleMeleeHit(
+		AActor* SourceActor,
+		const FHitResult& HitResult,
+		EZorbaMeleeDefenseResult DefenseResult);
+	void ApplyFodderParryExecutionBenefits();
+
+	UFUNCTION(BlueprintPure, Category = "Zorba|Combat|Defense")
+	bool IsDefending() const { return bIsDefending; }
+
+#if !UE_BUILD_SHIPPING
+	void ConfigureDefenseForAutomation(bool bKeepParryWindowOpen);
+#endif
 
 protected:
 	virtual void BeginPlay() override;
@@ -47,6 +77,18 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat")
 	TObjectPtr<UZorbaAttackDefinition> PrimaryAttackDefinition;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat")
+	TObjectPtr<UZorbaAttackDefinition> HeavyAttackDefinition;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat")
+	TObjectPtr<UZorbaAttackDefinition> DerivedHeavyAttackDefinition;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat")
+	TObjectPtr<UZorbaAttackDefinition> OpportunityAttackDefinition;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat")
+	TObjectPtr<UZorbaAttackDefinition> ExecutionAttackDefinition;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zorba|Debug")
 	TObjectPtr<UStaticMeshComponent> DebugBodyMesh;
@@ -135,6 +177,27 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Movement")
 	float DarkFormCooldown = 4.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Defense", meta = (ClampMin = "0.0", Units = "s"))
+	float ParryWindowDuration = 0.22f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Defense", meta = (ClampMin = "0.0", ClampMax = "180.0", Units = "Degrees"))
+	float DefenseHalfAngleDegrees = 75.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Defense", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float BlockedHealthDamageMultiplier = 0.2f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Defense", meta = (ClampMin = "0.0"))
+	float BlockedStaminaDamageMultiplier = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Defense", meta = (ClampMin = "0.0"))
+	float ParryStaminaDamage = 35.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Stamina", meta = (ClampMin = "0.0", Units = "s"))
+	float CombatStaminaRecoveryDelay = 1.25f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Stamina", meta = (ClampMin = "0.0"))
+	float CombatStaminaRecoveryPerSecond = 30.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Camera")
 	float GamepadTurnRate = 140.0f;
 
@@ -142,16 +205,27 @@ protected:
 	float GamepadLookUpRate = 100.0f;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
-	void OnPrimaryAttackRequested();
+	void OnOpportunityAttackStarted(AActor* TargetActor);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
-	void OnHeavyAttackRequested();
+	void OnExecutionStarted(AActor* TargetActor);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
 	void OnDefendStarted();
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
 	void OnDefendStopped();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
+	void OnGuardBroken(AActor* SourceActor);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
+	void OnMeleeHitReceived(
+		AActor* SourceActor,
+		const FHitResult& HitResult,
+		EZorbaMeleeDefenseResult DefenseResult,
+		float RemainingHealth,
+		float RemainingStamina);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
 	void OnDodgeRequested();
@@ -207,8 +281,21 @@ private:
 	void StopAbilityLayer();
 	void RequestPrimaryAttack();
 	void RequestHeavyAttack();
+	bool TryStartOpportunityAttack(const FVector& AttackDirection);
+	bool TryStartExecution(const FVector& AttackDirection);
+	bool StartAttackDefinition(
+		UZorbaAttackDefinition* AttackDefinition,
+		const FVector& AttackDirection,
+		AActor* LockedTarget = nullptr,
+		bool bTransitionFromActiveAttack = false);
+	void StopMovementForAttack();
+	void RecoverCombatStamina(float DeltaSeconds);
+#if !UE_BUILD_SHIPPING
+	void ConfigureAdvancedCombatAutomation();
+#endif
 	void StartDefend();
 	void StopDefend();
+	void CloseParryWindow();
 	void RequestDodge();
 	void RequestDarkForm();
 	void FinishDarkForm();
@@ -230,7 +317,10 @@ private:
 	bool bSprintToggledOn = false;
 	bool bAbilityLayerHeld = false;
 	bool bIsInDarkForm = false;
+	bool bIsDefending = false;
 	float LastDarkFormTime = -1000.0f;
+	float CombatStaminaRecoveryDelayRemaining = 0.0f;
 	FTimerHandle DarkFormTimerHandle;
+	FTimerHandle ParryWindowTimerHandle;
 	ECollisionResponse DefaultPawnCollisionResponse = ECR_Block;
 };

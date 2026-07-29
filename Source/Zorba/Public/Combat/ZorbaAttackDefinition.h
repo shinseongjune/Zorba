@@ -27,6 +27,44 @@ enum class EZorbaAttackDirectionPolicy : uint8
 	FacingOnly UMETA(DisplayName = "Facing Only")
 };
 
+UENUM(BlueprintType)
+enum class EZorbaAttackKind : uint8
+{
+	Standard UMETA(DisplayName = "Standard"),
+	Heavy UMETA(DisplayName = "Heavy"),
+	DerivedHeavy UMETA(DisplayName = "Derived Heavy"),
+	Opportunity UMETA(DisplayName = "Opportunity"),
+	Execution UMETA(DisplayName = "Execution")
+};
+
+/** How an incoming attack interacts with a defender that is facing it. */
+UENUM(BlueprintType)
+enum class EZorbaDefenseInteraction : uint8
+{
+	Standard UMETA(DisplayName = "Block Or Parry"),
+	GuardBreak UMETA(DisplayName = "Parry Or Guard Break"),
+	DodgeOnly UMETA(DisplayName = "Dodge Only")
+};
+
+/** Player-facing read for attacks that need a distinct presentation cue. */
+UENUM(BlueprintType)
+enum class EZorbaAttackSignal : uint8
+{
+	None UMETA(DisplayName = "None"),
+	Parry UMETA(DisplayName = "Parry"),
+	Dodge UMETA(DisplayName = "Dodge"),
+	Ambush UMETA(DisplayName = "Ambush")
+};
+
+UENUM(BlueprintType)
+enum class EZorbaMeleeDefenseResult : uint8
+{
+	None UMETA(DisplayName = "None"),
+	Blocked UMETA(DisplayName = "Blocked"),
+	Parried UMETA(DisplayName = "Parried"),
+	GuardBroken UMETA(DisplayName = "Guard Broken")
+};
+
 USTRUCT(BlueprintType)
 struct ZORBA_API FZorbaAttackHitPhase
 {
@@ -72,13 +110,30 @@ class ZORBA_API UZorbaAttackDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	UZorbaAttackDefinition();
+
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Attack")
 	FName AttackId = NAME_None;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Attack")
+	EZorbaAttackKind AttackKind = EZorbaAttackKind::Standard;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Defense")
+	EZorbaDefenseInteraction DefenseInteraction =
+		EZorbaDefenseInteraction::Standard;
+
+	/** Non-None signals participate in the crowd-wide exclusive special cue token. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Presentation")
+	EZorbaAttackSignal AttackSignal = EZorbaAttackSignal::None;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Attack")
 	TSoftObjectPtr<UAnimMontage> Montage;
+
+	/** Optional paired reaction montage for the locked target of a special attack. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Attack")
+	TSoftObjectPtr<UAnimMontage> TargetMontage;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Attack")
 	EZorbaAttackDirectionPolicy DirectionPolicy =
@@ -95,6 +150,31 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Damage")
 	FScalableFloat StaminaDamage = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Cost", meta = (ClampMin = "0.0"))
+	FScalableFloat CombatStaminaCost = 0.0f;
+
+	/** Light attacks open their heavy branch when AttackActive ends. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Combo")
+	bool bOpenHeavyBranchAfterHitWindow = false;
+
+	/** Health ratio at or below which an Execution attack may select a target. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Execution", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ExecutionHealthThresholdRatio = 0.25f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Execution", meta = (ClampMin = "0.0"))
+	FScalableFloat SourceHealthRecovery = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Execution", meta = (ClampMin = "0.0"))
+	FScalableFloat SourceStaminaRecovery = 0.0f;
+
+	/** Invulnerability granted when an execution resolves instantly without playing the paired Montage. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Execution", meta = (ClampMin = "0.0", Units = "s"))
+	float InstantExecutionInvulnerabilityDuration = 1.25f;
+
+	/** Desired attacker-to-target distance before paired opportunity/execution motion begins. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Presentation", meta = (ClampMin = "0.0", Units = "cm"))
+	float SpecialTargetAlignmentDistance = 110.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|TargetAssist")
 	bool bAllowTargetAssist = false;

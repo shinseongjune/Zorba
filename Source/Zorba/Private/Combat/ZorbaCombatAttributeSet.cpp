@@ -2,6 +2,7 @@
 
 #include "Combat/ZorbaCombatAttributeSet.h"
 
+#include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 
 UZorbaCombatAttributeSet::UZorbaCombatAttributeSet()
@@ -38,6 +39,42 @@ void UZorbaCombatAttributeSet::PreAttributeChange(const FGameplayAttribute& Attr
 	else if (Attribute == GetCombatStaminaAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxCombatStamina());
+	}
+}
+
+void UZorbaCombatAttributeSet::PostAttributeChange(
+	const FGameplayAttribute& Attribute,
+	float OldValue,
+	float NewValue)
+{
+	Super::PostAttributeChange(Attribute, OldValue, NewValue);
+
+	if (Attribute == GetMaxHealthAttribute() && GetHealth() > NewValue)
+	{
+		SetHealth(FMath::Max(0.0f, NewValue));
+	}
+	else if (Attribute == GetMaxCombatStaminaAttribute()
+		&& GetCombatStamina() > NewValue)
+	{
+		SetCombatStamina(FMath::Max(0.0f, NewValue));
+	}
+}
+
+void UZorbaCombatAttributeSet::PostGameplayEffectExecute(
+	const FGameplayEffectModCallbackData& Data)
+{
+	Super::PostGameplayEffectExecute(Data);
+
+	if (Data.EvaluatedData.Attribute == GetHealthAttribute())
+	{
+		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
+	}
+	else if (Data.EvaluatedData.Attribute == GetCombatStaminaAttribute())
+	{
+		SetCombatStamina(FMath::Clamp(
+			GetCombatStamina(),
+			0.0f,
+			GetMaxCombatStamina()));
 	}
 }
 

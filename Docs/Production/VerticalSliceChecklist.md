@@ -2,34 +2,75 @@
 
 이 파일만 현재 작업 순서와 다음 재개 지점을 관리합니다. 날짜별 완료 이력은 누적하지 않고, 아래 `현재 작업 인계`를 작업 종료 때마다 최신 상태로 덮어씁니다. 다음 작업은 반드시 이 인계를 먼저 읽고 시작하며, 이미 승인된 증거를 별도 단계로 다시 열지 않습니다.
 
-## 현재 작업 인계 — 2026-07-22 종료
+## 현재 작업 인계 — 2026-07-29 갱신
 
-현재 활성 게이트는 `5. 첫 무기 타격`의 **기본 공격 골든 히트**입니다. 에셋 추가 구매, 보스, 악마, 방어·패리로 퍼지지 않고 먼저 `입력 → 공격 방향 고정 → Montage → 판정 → 1회 피해 → 피격 반응`을 한 흐름으로 완성합니다.
+`5. 첫 무기 타격`의 기능적 기본 공격 게이트와 `6. 다음 구현 순서`의 **적 기본 공격**, **방어·패리 판정창**, **강공격·약→강 파생·Exhausted 기회공격·처형/회복**은 자동 실행 증거와 사용자 PIE 승인까지 끝났으므로 다시 열지 않습니다. 강공격 중 강공격 재입력이 파생으로 전환되던 회귀 수정도 사용자가 승인했습니다. 졸개 패리 즉결과 졸개 3명+정예 1명의 군중전, 적 역할·공격 유형·특수 신호권도 사용자 PIE에서 정상 동작을 확인했습니다. **2026-07-29 사용자 PIE에서 프레임레이트 의존 이동 수정 뒤 거리 유지 추격·후퇴·지속 옆걸음, 2.25초 정예 가드, 기본 공격 피해 감경과 강공격 가드 브레이크까지 모두 승인해 이 게이트를 닫았습니다. 첫 신성한 계율인 후방 공격 패시브는 구현·정식 빌드·전후방 자동 비교까지 끝났고 현재 활성 게이트는 사용자 PIE 승인입니다.** 승인 뒤 첫 금단 기술, 최소 UI와 미션 흐름 순으로 진행합니다. 전용 모션과 SFX/VFX, AI Perception·NavMesh·Behavior Tree/StateTree, 최종 캐릭터 교체는 기능 계약을 유지한 채 후속 표현·AI 확장·최종 통합 게이트에서 처리합니다.
 
-### 오늘 여기까지
+### 완료·실증
 
-완료·실증:
+- `DA_Player_Light01.Montage`가 유일한 재생 소스입니다. `BP_ZorbaCharacter`의 하드코딩 `OnPrimaryAttackRequested → Play Anim Montage` 노드를 삭제했고 BP 컴파일 `Good to go`와 저장을 확인했습니다.
+- 공격 시작 방향 저장·회전, Montage 전체 재입력/방향 잠금, `AttackActive`/`HitCommit` Notify 수신, 정상 종료·중단 정리를 `UZorbaMeleeCombatComponent`가 소유합니다.
+- `ForwardArc`가 대상 선택을 맡고 활성 구간의 `Trace_Base`/`Trace_Tip` Sweep은 접촉 정보만 보정합니다. Player `0`/Enemy `1`, 사망·아군 제외, 공격별 동일 대상 1회 규칙을 적용했습니다.
+- 재사용 가능한 `BP_ZorbaEnemyBase`를 만들었습니다. Team `1`, ASC, Health/Stamina, 피격 밀림, 사망·스태미나 고갈 상태 전환을 가지며 `L_OpenWorldTestArena`의 `GoldenHit_Enemy`로 배치했습니다.
+- `HitCommit` 수신 프레임에 무기 Trace를 즉시 샘플링하고 마지막 접점을 타격 표현 위치로 보존합니다. Montage 인스턴스가 사라지거나 AnimInstance가 교체돼도 공격 상태를 정리하는 감시 경로를 추가했습니다.
+- MaxHealth/MaxCombatStamina가 현재 값보다 낮아질 때 현재 값도 함께 낮춰 `현재값 ≤ 최대값` 계약을 유지합니다.
+- UE 5.8 정식 `ZorbaEditor Win64 Development` 빌드가 통과했습니다. 허용 목록의 `BP_ZorbaCharacter`와 `BP_ZorbaEnemyBase`만 다시 컴파일해 오류 `0`, 경고 `0`을 확인했습니다.
+- 에셋 검증에서 플레이어 공격 Data Asset 참조, Montage, HitPhase, Range `220`, HalfAngle `55`, MaxTargets `3`, 테스트 맵 로드를 확인했습니다. World Partition 외부 액터 파일에도 `GoldenHit_Enemy`와 `BP_ZorbaEnemyBase_C`가 존재합니다.
+- UE 자동화 `Project.Maps.PIE`가 `L_OpenWorldTestArena`를 Map Check 오류 `0`/경고 `0`으로 열고 Standalone PIE를 5초 실행·정상 종료했습니다. GameplayCue 검색 경로를 `/Game/60_FX`로 제한한 뒤 테스트 이벤트 경고도 `0`입니다.
+- 최종 Standalone PIE 첫 공격은 `WeaponTrace` 접촉으로 Health `100 → 90`, Stamina `100 → 95`, 후보 `1`, 적용 `1`이었습니다.
+- 빠른 더블클릭 공격은 시작·피해가 한 번만 발생했고 `BroadCoverageFallback`으로 Health `90 → 80`, Stamina `95 → 90`, 후보 `1`, 적용 `1`이었습니다. 공격 종료 뒤 다음 공격도 정상 복구됐습니다.
+- 사용자 PIE에서 W/A/S/D·대각선·무입력 공격 방향, 공격 중 방향 고정, 범위·각도 안팎 판정, `DA_Player_Light01.Range` 변경 반영을 승인했습니다. 이 증거는 다시 열지 않습니다.
+- `AZorbaCharacter::Move()`가 `IsAttackInProgress()` 동안 이동 입력을 무시하고, 공격 시작 성공 시 해당 프레임에 누적된 이동 입력과 현재 속도 및 스프린트 상태를 정리하도록 구현했습니다. 별도 잠금 플래그를 추가하지 않아 Montage 종료로 공격 상태가 정리되면 다음 이동 입력부터 자동 복구됩니다.
+- UE 5.8 `ZorbaEditor Win64 Development` 재빌드가 성공했습니다. 이어서 자동화 `Project.Maps.PIE`가 현재 시작 맵 `L_Boot`를 열어 `Success`, 종료 코드 `0`으로 끝났습니다. 이 자동화는 프로젝트 기동 회귀 증거이며 실제 이동 입력 차단의 체감 증거는 아닙니다.
+- 사용자 PIE에서 이동 중 공격 시 즉시 정지·Montage 동안 이동 차단과, 이동 키를 계속 누른 상태에서 Montage 종료 직후 자동 이동 복구를 승인했습니다.
+- `UZorbaEnemyBasicAttackComponent`가 플레이어 Team `0`을 거리로 선택하고, `DA_Enemy_Basic01`과 공용 `UZorbaMeleeCombatComponent`를 통해 공격 재생·Notify 판정·2.5초 재공격 주기를 수행합니다. 테스트 맵 자동 실행에서 매 공격마다 Health `10`, Stamina `5`가 정확히 한 번만 감소했습니다.
+- 방어는 전방 ±75도 안에서 유지되며, 시작 후 `0.22초`만 `State.ParryWindow`, 이후에는 `State.Defending`만 남습니다. 자동 실행에서 적 기본 공격 Health `10 → 2`, Stamina `5 → 5`로 감소하고 `Defense=Blocked`를 확인했습니다.
+- 패리는 플레이어 피해를 `0`으로 만들고 적 공격 Montage를 강제 중단한 뒤 적 Stamina를 `35` 감소시키며 `0.5초` 피격 경직을 적용합니다. 자동 실행에서 플레이어 Health/Stamina `100/100` 유지, 적 Stamina `100 → 65 → 30 → 0`, 세 번째 패리 뒤 후속 공격 중단을 확인했습니다.
+- `BP_ZorbaCharacter.DefendAction`은 `IA_Defend`, 기본 컨텍스트는 `IMC_Gameplay`로 지정돼 있습니다. 기준 입력은 키보드/마우스 우클릭, 패드 LB/L1입니다.
+- 위 변경 뒤 UE 5.8 정식 `ZorbaEditor Win64 Development` 빌드가 성공했습니다. 방어·패리 자동 실행은 Shipping에서 제외되는 명시적 테스트 옵션으로 상태만 준비하며, 공격과 피해는 제품 코드·Data Asset·Montage Notify 경로를 그대로 사용합니다.
+- 사용자 PIE에서 방어 피해 감소, 패리 무피해·적 공격 중단, 방어 입력 해제 뒤 일반 피격 복귀를 모두 승인했습니다. 방어·패리 기능 게이트는 여기서 닫습니다.
+- 단독 강공격 `DA_Player_Heavy01`은 스태미나 비용 `20`, 체력/자세 피해 `20/40`, 약→강 파생 `DA_Player_HeavyAfterLight01`은 비용 `15`, 피해 `25/50`으로 분리했습니다. 기본 공격의 `AttackActive` 종료가 파생 입력창을 열고, 파생 시작 시 기존 Montage를 정리한 뒤 저장된 공격 방향을 그대로 승계합니다.
+- 강공격 자동 실행에서 플레이어 스태미나 `100 → 80`, 적 Health/Stamina `100/100 → 80/60`을 확인했습니다. 약→강 자동 실행은 기본 공격 뒤 적 `90/95`, 파생 적중 뒤 `65/45`, 플레이어 스태미나 `100 → 85`로 끝나 두 공격 모두 한 번만 적용됐습니다.
+- 적 Stamina가 `0`이면 `State.Exhausted`로 6초간 이동·공격이 막히며, 기본 공격 입력이 유효한 탈진 적을 우선 선택해 `DA_Player_Opportunity01`을 실행합니다. 기회공격 동안 공격자는 제한 무적이며, 적에게 체력 피해 `35`를 한 번 적용한 뒤 탈진을 소비하고 Stamina `50`을 복구합니다.
+- 처형은 상호작용 입력에서 체력 비율 `25%` 이하 적을 우선 선택합니다. `DA_Player_Execution01`이 공격자/피격자 쌍 Montage, 정렬 거리와 회복량을 소유하며, 적을 확정 사망시킨 뒤 플레이어 Health `30`, Combat Stamina `50`을 회복합니다.
+- 기회공격 자동 실행은 `Enemy exhausted → PlayerOpportunity01 → Health 100 → 65 → Exhausted consumed` 순서를, 처형 자동 실행은 `PlayerExecution01 → Health 20 → 0 → Enemy executed → Health 30/Stamina 50 recovery` 순서를 실제 제품 경로에서 확인했습니다.
+- 네 공격은 모두 `UZorbaAttackDefinition`의 Montage를 유일한 재생 소스로 사용합니다. C++/Blueprint에서 별도 공격 Montage를 재생하지 않으므로 나중에 클립을 바꿀 때 Data Asset의 Montage와 `AttackActive`/`HitCommit` 위치만 교체하면 판정·피해·자원·상태 로직은 유지됩니다.
+- 사용자 PIE에서 단독 강공격 뒤 강공격을 다시 누르면 약→강 파생이 잘못 재생되는 회귀를 발견했습니다. 원인은 `DA_Player_Light01` 복제 시 `bOpenHeavyBranchAfterHitWindow=true`가 강공격·파생·기회·처형 Data Asset에도 복사된 것이었습니다.
+- 기본공격만 파생창 플래그를 갖도록 네 비기본 공격 에셋을 교정했고, 런타임도 현재 공격이 `PrimaryAttackDefinition`이자 `Standard`일 때만 `DerivedHeavy` 전환을 허용하도록 이중 방어했습니다. 자동 회귀 실행은 강공격 진행 중 재입력을 무시하고 종료 뒤 `PlayerHeavy01`을 다시 시작했으며 `PlayerHeavyAfterLight01`은 한 번도 시작하지 않았습니다. 별도 약→강 자동 실행에서는 파생이 기존처럼 정상 시작됐습니다.
+- 사용자 PIE에서 강공격 진행 중 강공격 재입력 무시와 종료 뒤 단독 강공격 재시작을 확인했습니다. 강공격 파생 회귀 게이트는 여기서 닫습니다.
+- 적에 `Fodder/Elite/Boss` 전투 등급을 추가하고 기존 `BP_ZorbaEnemyBase`는 정예로 유지했습니다. 파생 `BP_ZorbaEnemyFodder`는 Health `30`, Combat Stamina `35`, 크기 `0.88`이며 임시 머리 위 역할 라벨로 같은 대역 모델을 구분합니다.
+- 졸개 패리는 공격을 중단한 뒤 치명 피해를 같은 사망 경로에 넣는 즉결처형입니다. `DA_Player_Execution01`의 Health `30`·Combat Stamina `50` 회복과 `InstantExecutionInvulnerabilityDuration=1.25초` 제한 무적을 발동하며, 쌍 Montage·카메라 고정은 사용하지 않습니다. `OnParryInstantKill` Blueprint 이벤트에 나중에 짧은 전용 모션만 추가할 수 있습니다. 정예는 기존 패리 스태미나 피해→`Exhausted`→기회공격/처형 흐름을 유지합니다.
+- `UZorbaEnemyCrowdSubsystem`이 적별 안정된 포위 슬롯과 대상별 근접 공격 토큰만 관리합니다. 공격 상한은 `1`이고 대기 적은 플레이어 주위 반경 `340`의 각자 슬롯으로 이동합니다. 피격·패리·탈진·사망은 계속 각 적 액터가 독립적으로 소유합니다.
+- 테스트 맵에 졸개 3명과 기존 정예 1명을 묶는 `CrowdEncounter_01`을 배치했습니다. 졸개 패리 제품 경로 자동 실행에서 조우 `Enemies=4`, 졸개 Health `30 → 0`, 플레이어 Health/Stamina `40/25 → 70/75`, 즉결처형 무적 `1.25초` 시작·종료를 확인했습니다. 무적 중 뒤에서 이어진 다른 졸개의 `EnemyBasic01`은 대상에서 제외됐고, 공격권 상한도 계속 `max Active=1`을 유지했습니다.
+- 군중 배치 뒤 고급 공격 자동 검증이 졸개를 잘못 고르지 않도록 정예를 우선 선택하게 했습니다. 기존 쌍 처형 회귀 실행도 `PlayerExecution01 → 정예 사망 → Health/Stamina 40/25 → 70/75 → Montage 정상 종료` 순서로 다시 통과했습니다.
+- 전멸 자동 실행에서 독립 사망 신호가 `Remaining 3 → 2 → 1 → 0`으로 집계되고 `Combat encounter completed`가 정확히 한 번 발생했습니다. 완료 표현은 `OnEncounterClearPresentation` Blueprint 이벤트로 분리해 이후 미션/UI가 같은 신호를 받을 수 있습니다.
+- `UZorbaEnemyCombatBrainComponent`를 추가해 대상/상태 판단과 이동 의도를 기존 공격 실행기에서 분리했습니다. 최소 상태는 `Idle → Observe → Approach → Attack → Recover`와 `Defend/Disabled`이며, 관찰 중에는 지켜보기·옆걸음·특수 모션 이벤트 중 하나를 선택합니다. 현재 직접 이동 호출은 이 컴포넌트 한 곳에 모아 후속 NavMesh 이동으로 교체할 수 있게 했습니다.
+- `UZorbaEnemyCombatProfile`이 교전·이탈 거리, 관찰 거리/시간/가중치, 공격 간격, 공격별 선택 거리·가중치·재사용 시간·접근 속도, 방어 확률·유지 시간·재사용 시간을 소유합니다. `DA_Enemy_FodderProfile`은 기본 공격 하나와 방어 확률 `0`, `DA_Enemy_EliteProfile`은 기본·패리 유도·회피 전용·장거리 기습 네 공격과 방어 확률 `0.2`를 갖습니다.
+- 공격 데이터에 `Standard`, `GuardBreak`, `DodgeOnly` 방어 상호작용과 `None`, `Parry`, `Dodge`, `Ambush` 표현 신호를 추가했습니다. 플레이어 강공격 두 종류는 `GuardBreak`, `EnemyParry01`은 `GuardBreak+Parry`, `EnemyDodge01`은 `DodgeOnly+Dodge`, `EnemyAmbush01`은 `Standard+Ambush`입니다.
+- 적은 전방 유지 방어를 사용할 수 있습니다. 일반 공격은 체력 피해를 `0.2배`로 줄이고, 플레이어 강공격은 방어를 종료한 뒤 전체 피해를 적용합니다. 강공격 자동 실행에서 `Enemy defense started → PlayerHeavy01 → Enemy defense stopped → Health 100→80/Stamina 100→60, Defense=GuardBroken`을 확인했습니다. 적의 회피 전용 공격은 플레이어의 유지 방어와 패리 창을 모두 무시하며 패리 유도 공격은 정확한 패리만 허용합니다.
+- 군중 조정자에 일반 공격권과 별개의 대상별 특수 신호권을 추가했습니다. `Parry/Dodge/Ambush` 신호 공격은 접근 시작부터 공격 종료까지 이 권한을 하나만 점유하므로 여러 적이 동시에 서로 다른 특별 대응을 요구하지 않습니다.
+- UE 5.8 `ZorbaEditor Win64 Development` 전체 빌드가 새 UHT 타입과 컴포넌트를 포함해 통과했습니다. 에셋 검증은 정예 공격 `4`, 졸개 공격 `1`, 공격별 방어/신호 값, 두 Blueprint의 프로필 참조, 플레이어 강공격 두 종류의 `GuardBreak`를 확인했습니다. 테스트 맵 고정 프레임 실행에서 졸개/정예가 공격권 상한 `1`을 지키며 기본 공격을 반복하고 정예 방어가 주기적으로 시작됐습니다. 장기 실행에서는 `EnemyParry01`과 `EnemyDodge01`이 특수 신호권을 획득·반납했고, 장거리 자동 실행은 정예를 `800cm`에 배치한 뒤 `EnemyAmbush01` 선택→고속 접근→공격 시작→신호권 반납 순서를 통과했습니다.
+- 사용자 PIE에서 적 등급·군중 공격권·즉결처형·특수 공격 유형은 정상 동작을 확인했습니다. 다만 정예 가드 `0.9초`는 직접 타격을 시험하기에 짧았고, 관찰 행동이 추격과 지속 옆걸음을 하지 않는 문제가 남아 이 두 항목만 수정 게이트로 다시 열었습니다.
+- 관찰 행동과 거리 보정을 분리했습니다. `Watch/SpecialMotion`도 적정 거리 밖에서는 추격·후퇴하고 거리대 안에서만 정지하며, `Strafe`는 매 틱 접선 선행 지점을 갱신해 플레이어를 바라본 채 계속 원을 돕니다. 교전한 표적은 최초 감지 거리를 벗어나도 `LeashRange`까지 추적합니다. 비출시 자동 실행에서 정예가 `800 → 447.6cm`로 접근하고 플레이어 기준 각도를 `33.4°` 바꿔 거리 보정 뒤 측면 이동까지 수행했습니다.
+- 정예 Combat Profile의 방어 유지 시간을 `0.9 → 2.25초`로 늘렸습니다. 에셋 검증은 방어 유지 `2.25초`, 거리 허용폭 `75cm`, 옆걸음 선행 거리 `190cm`를 확인했고, 변경 뒤 UE 5.8 `ZorbaEditor Win64 Development` 정식 빌드와 테스트 맵 실행이 통과했습니다.
+- 2026-07-29 사용자 PIE 로그에서 적이 `528.8cm`에서 공격 접근을 선택했지만 8초 제한까지 실제 접근을 끝내지 못했고, `197.2cm`와 `200.8cm`처럼 플레이어가 직접 가까이 온 경우에만 공격을 시작한 것을 확인했습니다. 원인은 Brain이 `0.05초`마다 한 번만 Tick하면서 한 프레임만 유지되는 `AddMovementInput`을 사용해, 높은 PIE 프레임레이트에서 대부분의 프레임에 제동이 걸린 것이었습니다.
+- Brain 이동 의도를 매 프레임 갱신하도록 바꾼 뒤 UE 5.8 `ZorbaEditor Win64 Development` 정식 빌드가 통과했습니다. 동일한 120FPS 이동 자동화에서 수정 전 `800.0 → 783.1cm`, 이동량 `16.9cm`, 각도 변화 `0.0°`였던 결과가 수정 후 `800.0 → 435.1cm`, 이동량 `1019.0cm`, 각도 변화 `107.5°`로 바뀌어 추격 뒤 지속 옆걸음이 프레임레이트와 무관하게 진행됨을 확인했습니다. 실제 체감과 후퇴는 사용자 PIE 재확인을 유지합니다.
+- 사용자 PIE에서 수정된 추격·후퇴·지속 옆걸음과 2.25초 정예 가드를 확인했습니다. 가드 중 기본 공격 피해 감경과 강공격의 가드 브레이크·전체 피해, 졸개가 방어하지 않는 계약까지 승인했으므로 AI 이동·가드 수정 게이트를 닫습니다.
+- 첫 신성한 계율을 플레이어 전용 후방 공격 패시브로 구현했습니다. 피격자 후방축 기준 ±60도 안에서 가한 공격은 전방 방어 판정을 건너뛰고 체력 피해만 `1.5배`가 되며 전투 스태미나/자세 피해는 원본을 유지합니다. 무기 Trace가 아니라 두 액터의 방향으로 판정하고 확정 사망 처형은 배율에서 제외합니다.
+- UE 5.8 `ZorbaEditor Win64 Development` 정식 빌드가 통과했습니다. 같은 가드 중 정예를 전방에서 기본 공격한 자동 실행은 Health `100 → 98`, Stamina `100 → 95`, `Defense=Blocked`, `SacredDoctrine=None`이었고, 후방 실행은 Health `100 → 85`, Stamina `100 → 95`, `Defense=None`, `SacredDoctrine=RearAttack`이었습니다.
+- 공용 피해 경로 회귀 확인에서 전방 강공격은 기존대로 정예 가드를 종료하고 Health/Stamina `100/100 → 80/60`, `Defense=GuardBroken`, `SacredDoctrine=None`을 유지했습니다. 후방 계율 발동은 개발 빌드에서 노란 `SACRED REAR x1.50` 텍스트로 표시합니다.
 
-- `Sword and Shield Animations V1`의 IP 135개와 RM 152개, 총 287개 애니메이션을 UE 5.8 프로젝트에 반입했습니다.
-- `IK_SwordShield_Manny`, `RTG_Zorba_Combat`을 만들고 `Idle1_IP`, `Attack1_IP` 두 클립을 Garret으로 리타깃했습니다.
-- `Combat.FullBody` Slot과 `AM_Zorba_SS_Light01`을 만들었고 입력으로 Montage가 정상 재생됩니다.
-- Montage에는 `AttackActive` Notify Window와 `HitCommit` Notify가 있습니다.
-- `UZorbaAttackDefinition`, `DA_Player_Light01`, `UZorbaMeleeCombatComponent`를 만들고 정식 C++ 빌드가 통과했습니다.
-- 이동 입력이 있으면 현재 `MoveAction`이 뜻하는 월드 이동 방향, 입력이 없으면 캐릭터 전방을 공격 방향으로 선택합니다. 청록색 Arrow가 W/A/S/D와 대각선 입력을 따라 바뀌는 PIE 증거까지 통과했습니다.
-- 정수리 카메라에서 수평 Forward가 0에 가까워질 때 Right 벡터로 지면 Forward를 복원하는 fallback은 코드에 포함했습니다. 이 극단각은 내일 통합 전투 검증 안에서만 회귀 확인합니다.
+### 임시 승인과 남은 증거
 
-임시 승인:
-
-- `Attack1`의 길이와 `AttackActive`/`HitCommit` 위치는 현재 전투를 만들 수 있는 수준으로만 승인했습니다. 실제 타격을 붙인 뒤 접촉 프레임을 한 번 조정합니다.
-- 검·방패 부착과 `Trace_Base`/`Trace_Tip` 위치는 작동하지만 정렬이 어색합니다. 골든 히트를 막지는 않으며 캐릭터 최종 교체 전 별도 보정합니다.
-- 판매자 원본은 현재 `Content/SwordAndShieldAnimationV1`에 있습니다. 참조가 연결된 상태에서 파일 시스템으로 옮기지 말고, 골든 히트 뒤 Content Browser 이동과 Redirector 정리로 `90_ExternalAssets` 규칙을 맞춥니다. 공개 저장소에는 원본과 애니메이션 데이터를 포함한 리타깃 출력물을 올리지 않습니다.
-
-아직 미구현:
-
-- Data Asset Montage의 단일 실행 권한, 실제 캐릭터 회전과 공격 중 방향 잠금, 연타 재시작 차단, 정상 종료·중단 시 정리
-- Notify의 C++ 수신, `ForwardArc` 대상 선정, 활성 구간의 무기 Sweep, 동일 대상 1회 및 팀 필터
-- 실제 Health/Stamina 피해, 피격 반응, 사운드·VFX
-- `Content/30_Enemies`의 재사용 가능한 적 전투 기반. 현재는 `.gitkeep`뿐이므로 실제 피해 증거를 낼 대상이 없습니다.
+- `Attack1`의 길이와 `AttackActive`/`HitCommit` 위치는 기능 검증 수준으로 승인합니다. 사운드·VFX를 붙일 때 보이는 검 접촉 프레임과 한 번만 맞춥니다.
+- 검·방패 부착과 `Trace_Base`/`Trace_Tip` 위치는 작동하지만 정렬이 어색합니다. 현재 골든 히트를 막지는 않으며 캐릭터 최종 교체 전 별도 보정합니다.
+- 판매자 원본은 `Content/SwordAndShieldAnimationV1`에 있고 공개 저장소에서 제외됩니다. 파일 시스템으로 옮기지 말고 골든 히트 승인 뒤 Content Browser 이동과 Redirector 정리로 `90_ExternalAssets` 규칙을 맞춥니다.
+- 패리로 적 Montage를 강제 중단하는 실제 원인이 생겼고, 중단 즉시 공격 상태가 정리되어 다음 재공격 주기로 복구되는 것을 자동 실행에서 확인했습니다. 플레이어 공격의 피격·상태이상 중단은 해당 원인이 구현될 때 별도로 확인합니다.
+- 승인된 타격 SFX/VFX가 없으므로 효과 동기화는 현재 기능 게이트를 막지 않습니다. 에셋 도입 뒤 보이는 검 접촉 프레임에 판정·사운드·VFX를 맞추는 표현 게이트로 별도 재개합니다.
+- 방어·패리 전용 리타깃 애니메이션과 방패 충돌 SFX/VFX는 아직 없습니다. 현재 판정은 로그와 파란/초록 디버그 표시로 확인하고, 승인 클립과 효과 에셋이 들어올 때 표현 게이트로 묶습니다.
+- 모션 연결 지점은 플레이어의 `OnDefendStarted`, `OnDefendStopped`, `OnMeleeHitReceived(DefenseResult)`와 적의 `OnParried` Blueprint 이벤트로 분리했습니다. 나중에 시작·유지·종료·방어 충격·패리 반응 Montage를 붙여도 판정·피해 C++은 수정하지 않습니다.
+- 고급 공격용 임시 클립은 단독 강공격 `Attack2_IP`, 약→강 `Attack3_Stage2_Complete_IP`, 기회공격 쌍 `Attack4_Stage2_Complete_IP/React`, 처형 쌍 `Attack10_Stage2_Complete_IP/React`입니다. 플레이어 Garret 대역의 기능 연결은 사용자 승인됐습니다. 공격자/피격자 발 미끄러짐, 방패·검 관통, 접촉 프레임과 거리 `100~105cm`의 최종 품질 보정은 최종 캐릭터 교체와 표현 폴리시 때 다시 확인하며 현재 기능 게이트를 막지 않습니다.
+- 판매팩 원본과 `_RetargetTest` 결과는 공개 저장소 제외 상태를 유지합니다. 프로젝트 소유 Montage·Attack Definition만 공개 가능한 산출물이며, 최종 캐릭터로 바꿀 때 같은 Retargeter로 다시 출력하고 기존 Notify 이름을 보존합니다.
 
 ### 고정 전투 판정 계약
 
@@ -37,33 +78,23 @@
 2. **무기 Trace는 대상 선정 권한이 없습니다.** `Trace_Base`와 `Trace_Tip` Sweep은 타점·법선·피격 부위·VFX 위치를 보정합니다. 넓은 범위에 든 대상은 얇은 검 Trace가 빗나가도 피해 대상에서 탈락시키지 않습니다.
 3. Montage·범위·피해·방향 정책은 `UZorbaAttackDefinition`이 소유합니다. 준비·활성·회수의 실제 프레임 타이밍은 Montage Section/Notify가 소유하며 C++이나 BP에 초 단위로 복제하지 않습니다.
 4. `bAttackInProgress`는 Montage 전체의 재입력 차단·방향 잠금을, `bHitWindowOpen`은 `AttackActive` 동안의 접점 수집만 담당합니다.
-5. BP와 C++에서 Montage를 이중 재생하지 않습니다. 내일부터 `DA_Player_Light01.Montage`가 유일한 소스이고, 현재 BP의 하드코딩 `Play Anim Montage` 경로는 제거합니다.
+5. BP와 C++에서 Montage를 이중 재생하지 않습니다. `DA_Player_Light01.Montage`만 재생 소스로 사용합니다.
 
-### 내일 첫 작업 — 한 묶음으로 구현
+### 적 AI와 방어 상호작용 계약 — 기능 기반 구현
 
-헤더/UHT 변경이 포함되므로 먼저 에디터를 저장·종료합니다. 시작 파일은 `UZorbaMeleeCombatComponent::BeginAttack()`입니다. 아래 1~8을 서로 다른 사용자 승인 단계로 잘게 쪼개지 않고, 내부 컴파일 체크포인트만 두면서 **기능적 골든 히트 한 묶음**으로 진행합니다.
+- Brain은 판단과 이동 의도만, BasicAttackComponent는 선택된 공격 실행만, MeleeCombatComponent는 Montage·Notify·타격 판정만 소유합니다. 완성형 Behavior Tree/StateTree와 AI Perception은 아직 넣지 않습니다.
+- 공격별 방어 상호작용은 `UZorbaAttackDefinition` 데이터가 소유합니다. 기본형은 방어·패리 가능, 가드 브레이크형은 유지 방어를 깨지만 정확한 패리는 허용, 회피 전용형은 방어·패리를 모두 무시합니다.
+- 역할별 공격 빈도와 선택 거리는 Combat Profile에서 조정합니다. 장거리 기습은 `550~1400cm`에서만 후보가 되고 `1.75배` 접근 속도를 사용합니다. 최종 돌진 이동·충돌·전용 Montage는 후속 모션 게이트입니다.
+- 특수 공격은 `OnAttackSignalStarted`, 적 방어는 `OnDefendStarted/Stopped/OnGuardBroken`, 관찰 특수 모션은 `OnObserveActionStarted` Blueprint 이벤트를 제공합니다. 현재 개발 빌드의 임시 색상 텍스트를 최종 GameplayCue/VFX와 Montage로 교체해도 판정 계약은 유지됩니다.
+- 직접 이동은 임시 평면 이동입니다. 장애물 회피, NavMesh 경로 탐색, 시야/청각, 귀환 경로, 분대 전술은 실제 전투 공간을 만든 뒤 같은 Brain의 이동/대상 공급부를 교체하는 후속 AI 게이트입니다.
+- 관찰 이동은 공격권 유무와 별개로 선호 거리±허용폭을 유지합니다. 너무 멀면 추격하고 너무 가까우면 후퇴하며, 거리대 안에서 `Watch/SpecialMotion`은 지켜보고 `Strafe`는 플레이어를 향한 채 지속 측면 이동합니다. Brain이 회전을 소유하는 동안 이동 방향 자동 회전은 끄고, Brain을 중단하면 기존 설정을 복구합니다.
 
-1. `DA_Player_Light01.Montage`를 로드·재생하는 책임을 C++ 공격 경로로 옮기고 BP의 하드코딩 Montage 재생을 제거합니다.
-2. 공격 시작 시 현재 방향을 한 번 저장하고 그 방향으로 캐릭터를 회전시킨 뒤, Montage가 끝날 때까지 방향과 재입력을 잠급니다.
-3. 정상 종료, Blend Out, 중단의 모든 경로에서 잠금·활성 공격·Trace 상태가 반드시 해제되게 합니다.
-4. `AttackActive` 시작/종료와 `HitCommit`을 C++ 컴포넌트가 받아 `bHitWindowOpen`과 판정 커밋을 제어하게 합니다.
-5. `ForwardArc`로 넓은 후보를 모으고 자기 자신, 아군, 사망 대상, 각도 밖 대상, 이미 맞은 대상을 제외합니다.
-6. 활성 구간에만 이전/현재 `Trace_Base`·`Trace_Tip` 사이를 Sweep하여 접촉 정보를 모읍니다. 접촉이 없으면 넓은 판정 대상의 충돌체에서 대체 타점을 구합니다.
-7. 버릴 테스트 더미 대신 이후 AI가 그대로 상속할 최소 `Enemy` 전투 기반을 만듭니다. Team `1`, ASC/Attribute, Health/Stamina, 피격 반응을 소유하게 하고 첫 검증에서는 맵에 정지 상태로 배치합니다.
-8. `HitCommit`에서 대상별 한 번만 GameplayEffect와 피격 반응을 적용하고, 타점에 디버그 표시를 남깁니다. 승인된 SFX/VFX가 없으면 일회용 에셋을 만들지 않고 해당 표현만 다음 증거로 남깁니다.
+### 현재 확인 요청 — 첫 신성한 계율 사용자 PIE 승인
 
-방향 Arrow만 다시 확인하는 별도 테스트는 하지 않습니다. 다만 새로 구현되는 **회전·잠금·해제**는 다음 한 번의 통합 PIE에서 공격 결과와 함께 확인합니다.
-
-### 내일 묶음의 단일 통합 PIE 승인 조건
-
-- W/A/S/D·대각선 입력 중 공격은 입력 방향으로 회전해 타격하고, 무입력 공격은 현재 캐릭터 전방을 유지합니다.
-- 공격 중 반대 방향을 입력해도 진행 중인 공격 방향은 바뀌지 않고, 연타로 Montage가 처음부터 재시작되지 않습니다.
-- 정상 종료와 강제 중단 뒤 이동·회전·다음 공격이 모두 복구됩니다.
-- 넓은 `ForwardArc` 안의 적은 검 Trace가 직접 스치지 않아도 맞고, 범위·각도 밖의 적은 맞지 않습니다.
-- 한 공격에서 같은 적의 Health/Stamina가 정확히 한 번만 감소하고 피격 반응도 한 번만 재생됩니다.
-- `DA_Player_Light01`의 Range를 바꾸면 코드 수정 없이 실제 범위가 바뀝니다.
-- 정수리 카메라 fallback을 포함해 크래시·경고·잠금 잔류 없이 Output Log가 깨끗합니다.
-- 이 증거가 통과한 뒤에만 `적 기본 공격 → 방어·패리 → 강공격·Exhausted → 기회공격` 순서로 넘어갑니다.
+- 정면이나 측면에서 기본 공격할 때 노란 `SACRED REAR` 표시가 나오지 않고 기존 피해가 유지되는지 확인합니다.
+- 적이 공격 방향을 고정한 틈에 뒤로 돌아 후방축 기준 ±60도 안에서 기본 공격하면 노란 `SACRED REAR x1.50`이 한 번 표시되는지 확인합니다.
+- 후방 발동 시 체력 피해만 `10 → 15`로 증가하고 전투 스태미나 피해는 기존 `5`로 유지되는지 Output Log에서 확인합니다. 공격 한 번에 같은 적에게 두 번 적용되면 안 됩니다.
+- 후방에서 발동해도 새 입력이나 자원 비용은 없어야 하며, 기회공격/처형 라우팅과 기존 가드 브레이크 동작이 달라지면 안 됩니다. 이 항목이 승인되면 첫 금단 기술 기능으로 진행합니다.
 
 ## 제품 에셋 기준
 
@@ -164,21 +195,33 @@ Paragon은 군단 채우기용이 아니라 주연·엘리트·보스 제작 베
 ### 5. 첫 무기 타격
 
 - [x] `UZorbaAttackDefinition`과 `DA_Player_Light01`에 Montage, 방향 정책, 판정 모양·크기, 최대 대상, 체력·스태미나 피해, 전방 보정 값을 둔다.
-- [ ] 준비·활성·회수 프레임은 Montage Section/Notify가 소유하고 C++/BP에 중복 하드코딩하지 않는다.
-- [ ] 공격 데이터의 넓은 범위로 대상을 고르고, `Trace_Base`와 `Trace_Tip` Sweep은 타점 보정에만 사용한다.
-- [ ] 같은 공격에서 같은 대상을 한 번만 맞히고 Player `0`, Enemy `1` 팀 필터를 적용한다.
-- [ ] 기본 공격 적중, 빗나감, 방어 충격, 패리, 피격 경직을 PIE에서 확인한다.
-- [ ] 검이 닿았다고 보이는 순간에 판정·사운드·피격 반응이 함께 나는 골든 히트를 승인한다.
+- [x] 준비·활성·회수 프레임은 Montage Section/Notify가 소유하고 C++/BP에 중복 하드코딩하지 않는다.
+- [x] 공격 데이터의 넓은 범위로 대상을 고르고, `Trace_Base`와 `Trace_Tip` Sweep은 타점 보정에만 사용한다.
+- [x] 같은 공격에서 같은 대상을 한 번만 맞히고 Player `0`, Enemy `1` 팀 필터를 적용한다.
+- [x] 기본 공격 방향, 방향 고정, 적중·빗나감, 범위·각도 안팎, Data Asset Range 반영을 PIE에서 확인한다.
+- [x] Montage 진행 중 이동 입력을 차단하고 정상 종료 뒤 즉시 이동이 복구되는지 PIE에서 확인한다.
+- [후순위] 강제 중단 복구는 실제 중단 원인을 구현할 때, 판정·사운드·VFX 동기화는 승인된 효과 에셋을 도입할 때 확인한다.
 
 ### 6. 다음 구현 순서
 
-- [ ] GameplayEffect 초기 수치와 사망/스태미나 고갈/`Exhausted` 상태 전환
-- [ ] 적 기본 공격과 패리 판정창
-- [ ] 강공격과 약공격 후 강공격 파생
-- [ ] `Exhausted` 기회공격과 제한된 무적
-- [ ] 약한 적 3~5마리 군중전
-- [ ] 신성한 계율 1개와 금단 기술 1개
-- [ ] 처형과 체력/전투 스태미나 회복
+- [x] GameplayEffect 초기 수치와 사망/스태미나 고갈 상태 전환 기반
+- [x] 적 기본 공격
+- [x] 방어와 패리 판정창 구현·자동 실행 증거
+- [x] 방어·패리·방어 종료 사용자 PIE 승인
+- [x] 강공격과 약공격 후 강공격 파생 구현·자동 실행 증거
+- [x] `Exhausted` 기회공격과 제한된 무적 구현·자동 실행 증거
+- [x] 고급 공격 4종의 기본 동작 사용자 PIE 승인
+- [x] 강공격 중 강공격 재입력 회귀 수정 사용자 PIE 확인
+- [x] 졸개 패리 즉결과 약한 적 3명+정예 1명 군중전 구현·자동 실행 증거
+- [x] 최소 적 AI 상태/책임 분리와 역할별 Combat Profile 구현·빌드·에셋/맵 실행 검증
+- [x] 적 방어, 강공격 가드 브레이크, 패리 유도·회피 전용·장거리 기습 공격과 특수 신호권 구현
+- [x] 군중 공격 흐름, 졸개·정예 차이, 즉결처형, 특수 공격 유형 사용자 PIE 승인
+- [x] 프레임레이트 의존 이동 수정 후 거리 유지 추격·후퇴·지속 옆걸음과 2.25초 정예 가드 사용자 PIE 승인
+- [후속] 적 전용 방어·특수 공격·기습 Montage와 최종 GameplayCue/VFX/SFX
+- [x] 첫 신성한 계율: 후방 공격의 방어 무시·체력 피해 증가 패시브 구현·정식 빌드·전후방 자동 비교
+- [ ] 첫 신성한 계율 사용자 PIE 승인
+- [ ] 첫 금단 기술 1개
+- [x] 처형과 체력/전투 스태미나 회복 구현·자동 실행 증거
 - [ ] 최소 전투 UI와 미션 성공/실패 흐름
 
 ## 검증 규칙

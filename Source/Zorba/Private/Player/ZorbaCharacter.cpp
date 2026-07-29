@@ -18,7 +18,17 @@
 #include "InputActionValue.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Combat/ZorbaAttackDefinition.h"
+#include "Combat/ZorbaCombatAttributeSet.h"
+#include "Combat/ZorbaGameplayTags.h"
 #include "Combat/ZorbaMeleeCombatComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Enemy/ZorbaEnemyCharacter.h"
+#include "Enemy/ZorbaEnemyCombatBrainComponent.h"
+#include "Kismet/GameplayStatics.h"
+#if !UE_BUILD_SHIPPING
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#endif
 
 AZorbaCharacter::AZorbaCharacter()
 {
@@ -107,6 +117,15 @@ void AZorbaCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	DefaultPawnCollisionResponse = GetCapsuleComponent()->GetCollisionResponseToChannel(ECC_Pawn);
+#if !UE_BUILD_SHIPPING
+	ConfigureAdvancedCombatAutomation();
+#endif
+}
+
+void AZorbaCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	RecoverCombatStamina(DeltaSeconds);
 }
 
 void AZorbaCharacter::NotifyActorBeginOverlap(AActor* OtherActor)
@@ -269,6 +288,13 @@ void AZorbaCharacter::BindEnhancedInput(UInputComponent* PlayerInputComponent)
 
 void AZorbaCharacter::Move(const FInputActionValue& Value)
 {
+	if (MeleeCombatComponent
+		&& MeleeCombatComponent->IsAttackInProgress())
+	{
+		StopMoveInput();
+		return;
+	}
+
 	const FVector2D MovementVector = Value.Get<FVector2D>();
 
 	if (MovementVector.IsNearlyZero())
@@ -361,6 +387,12 @@ void AZorbaCharacter::LookUpAtRate(float Value)
 
 void AZorbaCharacter::FaceCameraYaw()
 {
+	if (MeleeCombatComponent
+		&& MeleeCombatComponent->IsAttackInProgress())
+	{
+		return;
+	}
+
 	if (Controller == nullptr)
 	{
 		return;
@@ -540,59 +572,762 @@ void AZorbaCharacter::StopAbilityLayer()
 
 void AZorbaCharacter::RequestPrimaryAttack()
 {
-	if (!IsValid(PrimaryAttackDefinition))
+	if (bIsDefending)
 	{
 		UE_LOG(
 			LogTemp,
-			Warning,
-			TEXT("Primary attack rejected: PrimaryAttackDefinition is missing."));
-		return;
-	}
-
-	if (!MeleeCombatComponent)
-	{
-		UE_LOG(
-			LogTemp,
-			Warning,
-			TEXT("Primary attack rejected: MeleeCombatComponent is missing."));
+			Verbose,
+			TEXT("Primary attack ignored while defending."));
 		return;
 	}
 
 	const FVector AttackDirection =
 		ResolveAttackDirection();
-
-	if (!MeleeCombatComponent->BeginAttack(
-		PrimaryAttackDefinition,
-		AttackDirection))
+	if (TryStartOpportunityAttack(AttackDirection))
 	{
 		return;
+	}
+
+	StartAttackDefinition(PrimaryAttackDefinition, AttackDirection);
+}
+
+void AZorbaCharacter::RequestHeavyAttack()
+{
+	if (bIsDefending || !MeleeCombatComponent)
+	{
+		return;
+	}
+
+	const FVector AttackDirection = ResolveAttackDirection();
+	if (MeleeCombatComponent->IsAttackInProgress())
+	{
+		UZorbaAttackDefinition* ActiveAttackDefinition =
+			MeleeCombatComponent->GetActiveAttackDefinition();
+		if (ActiveAttackDefinition != PrimaryAttackDefinition
+			|| ActiveAttackDefinition->AttackKind
+				!= EZorbaAttackKind::Standard
+			|| !MeleeCombatComponent->IsHeavyBranchWindowOpen()
+			|| !IsValid(DerivedHeavyAttackDefinition))
+		{
+			UE_LOG(
+				LogTemp,
+				Verbose,
+				TEXT("Heavy attack ignored: derived-heavy window is closed."));
+			return;
+		}
+
+		StartAttackDefinition(
+			DerivedHeavyAttackDefinition,
+			MeleeCombatComponent->GetCurrentAttackDirection(),
+			nullptr,
+			true);
+		return;
+	}
+
+	StartAttackDefinition(HeavyAttackDefinition, AttackDirection);
+}
+
+bool AZorbaCharacter::TryStartOpportunityAttack(
+	const FVector& AttackDirection)
+{
+	if (!MeleeCombatComponent
+		|| MeleeCombatComponent->IsAttackInProgress()
+		|| !IsValid(OpportunityAttackDefinition))
+	{
+		return false;
+	}
+
+	AActor* TargetActor = MeleeCombatComponent->FindBestEligibleTarget(
+		OpportunityAttackDefinition,
+		AttackDirection);
+	if (!TargetActor)
+	{
+		return false;
+	}
+
+	FVector TargetDirection =
+		(TargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	if (!StartAttackDefinition(
+		OpportunityAttackDefinition,
+		TargetDirection,
+		TargetActor))
+	{
+		return false;
+	}
+
+	OnOpportunityAttackStarted(TargetActor);
+	return true;
+}
+
+bool AZorbaCharacter::TryStartExecution(
+	const FVector& AttackDirection)
+{
+	if (!MeleeCombatComponent
+		|| MeleeCombatComponent->IsAttackInProgress()
+		|| !IsValid(ExecutionAttackDefinition))
+	{
+		return false;
+	}
+
+	AActor* TargetActor = MeleeCombatComponent->FindBestEligibleTarget(
+		ExecutionAttackDefinition,
+		AttackDirection);
+	if (!TargetActor)
+	{
+		return false;
+	}
+
+	FVector TargetDirection =
+		(TargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	if (!StartAttackDefinition(
+		ExecutionAttackDefinition,
+		TargetDirection,
+		TargetActor))
+	{
+		return false;
+	}
+
+	OnExecutionStarted(TargetActor);
+	return true;
+}
+
+void AZorbaCharacter::ApplyFodderParryExecutionBenefits()
+{
+	if (!HasAuthority()
+		|| !MeleeCombatComponent
+		|| !IsValid(ExecutionAttackDefinition))
+	{
+		return;
+	}
+
+	MeleeCombatComponent->ApplyInstantExecutionBenefits(
+		ExecutionAttackDefinition);
+}
+
+bool AZorbaCharacter::StartAttackDefinition(
+	UZorbaAttackDefinition* AttackDefinition,
+	const FVector& AttackDirection,
+	AActor* LockedTarget,
+	bool bTransitionFromActiveAttack)
+{
+	if (!IsValid(AttackDefinition) || !MeleeCombatComponent)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("Attack rejected: definition or melee component is missing."));
+		return false;
+	}
+
+	const bool bStarted = bTransitionFromActiveAttack
+		? MeleeCombatComponent->TransitionAttack(
+			AttackDefinition,
+			AttackDirection)
+		: MeleeCombatComponent->BeginAttack(
+			AttackDefinition,
+			AttackDirection,
+			LockedTarget);
+	if (!bStarted)
+	{
+		return false;
+	}
+
+	StopMovementForAttack();
+	CombatStaminaRecoveryDelayRemaining = CombatStaminaRecoveryDelay;
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("Player attack requested: %s Direction=%s"),
+		*AttackDefinition->AttackId.ToString(),
+		*AttackDirection.ToCompactString());
+	return true;
+}
+
+void AZorbaCharacter::StopMovementForAttack()
+{
+	ConsumeMovementInputVector();
+	GetCharacterMovement()->StopMovementImmediately();
+	StopMoveInput();
+}
+
+void AZorbaCharacter::RecoverCombatStamina(float DeltaSeconds)
+{
+	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+	if (!AbilitySystem
+		|| AbilitySystem->HasMatchingGameplayTag(
+			ZorbaGameplayTags::State_Dead))
+	{
+		return;
+	}
+
+	if (bIsDefending
+		|| bIsInDarkForm
+		|| (MeleeCombatComponent
+			&& MeleeCombatComponent->IsAttackInProgress()))
+	{
+		CombatStaminaRecoveryDelayRemaining = CombatStaminaRecoveryDelay;
+		return;
+	}
+
+	CombatStaminaRecoveryDelayRemaining = FMath::Max(
+		0.0f,
+		CombatStaminaRecoveryDelayRemaining - DeltaSeconds);
+	if (CombatStaminaRecoveryDelayRemaining > 0.0f)
+	{
+		return;
+	}
+
+	const float CurrentStamina = AbilitySystem->GetNumericAttribute(
+		UZorbaCombatAttributeSet::GetCombatStaminaAttribute());
+	const float MaxStamina = AbilitySystem->GetNumericAttribute(
+		UZorbaCombatAttributeSet::GetMaxCombatStaminaAttribute());
+	if (CurrentStamina >= MaxStamina)
+	{
+		return;
+	}
+
+	AbilitySystem->ApplyModToAttribute(
+		UZorbaCombatAttributeSet::GetCombatStaminaAttribute(),
+		EGameplayModOp::Additive,
+		FMath::Max(0.0f, CombatStaminaRecoveryPerSecond) * DeltaSeconds);
+	if (AbilitySystem->GetNumericAttribute(
+		UZorbaCombatAttributeSet::GetCombatStaminaAttribute()) > 0.0f)
+	{
+		AbilitySystem->RemoveLooseGameplayTag(
+			ZorbaGameplayTags::State_StaminaDepleted);
+	}
+}
+
+#if !UE_BUILD_SHIPPING
+void AZorbaCharacter::ConfigureAdvancedCombatAutomation()
+{
+	FString TestMode;
+	if (!FParse::Value(
+		FCommandLine::Get(),
+		TEXT("ZorbaCombatTest="),
+		TestMode))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	auto FindTestEnemy = [this]() -> AZorbaEnemyCharacter*
+	{
+		TArray<AActor*> Enemies;
+		UGameplayStatics::GetAllActorsOfClass(
+			this,
+			AZorbaEnemyCharacter::StaticClass(),
+			Enemies);
+		Enemies.Sort(
+			[this](const AActor& Left, const AActor& Right)
+			{
+				return FVector::DistSquared(
+					GetActorLocation(),
+					Left.GetActorLocation())
+					< FVector::DistSquared(
+						GetActorLocation(),
+					Right.GetActorLocation());
+			});
+		AZorbaEnemyCharacter* FallbackEnemy = nullptr;
+		for (AActor* EnemyActor : Enemies)
+		{
+			AZorbaEnemyCharacter* Enemy =
+				Cast<AZorbaEnemyCharacter>(EnemyActor);
+			if (!Enemy || Enemy->IsDead())
+			{
+				continue;
+			}
+			if (!Enemy->IsFodder())
+			{
+				return Enemy;
+			}
+			if (!FallbackEnemy)
+			{
+				FallbackEnemy = Enemy;
+			}
+		}
+		return FallbackEnemy;
+	};
+
+	if (TestMode.Equals(TEXT("Heavy"), ESearchCase::IgnoreCase))
+	{
+		FTimerHandle TestTimer;
+		World->GetTimerManager().SetTimer(
+			TestTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this]() { RequestHeavyAttack(); }),
+			0.25f,
+			false);
+	}
+	else if (TestMode.Equals(
+		TEXT("DerivedHeavy"),
+		ESearchCase::IgnoreCase))
+	{
+		FTimerHandle LightTimer;
+		World->GetTimerManager().SetTimer(
+			LightTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this]() { RequestPrimaryAttack(); }),
+			0.2f,
+			false);
+		FTimerHandle HeavyTimer;
+		World->GetTimerManager().SetTimer(
+			HeavyTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this]() { RequestHeavyAttack(); }),
+			1.15f,
+			false);
+	}
+	else if (TestMode.Equals(
+		TEXT("HeavyRepeat"),
+		ESearchCase::IgnoreCase))
+	{
+		FTimerHandle FirstHeavyTimer;
+		World->GetTimerManager().SetTimer(
+			FirstHeavyTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this]() { RequestHeavyAttack(); }),
+			0.2f,
+			false);
+		FTimerHandle ReentryTimer;
+		World->GetTimerManager().SetTimer(
+			ReentryTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this]() { RequestHeavyAttack(); }),
+			1.35f,
+			false);
+		FTimerHandle CompletedRepeatTimer;
+		World->GetTimerManager().SetTimer(
+			CompletedRepeatTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this]() { RequestHeavyAttack(); }),
+			3.45f,
+			false);
+	}
+	else if (TestMode.Equals(
+		TEXT("Opportunity"),
+		ESearchCase::IgnoreCase))
+	{
+		FTimerHandle TestTimer;
+		World->GetTimerManager().SetTimer(
+			TestTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this, FindTestEnemy]()
+				{
+					AZorbaEnemyCharacter* Enemy = FindTestEnemy();
+					if (!Enemy || !Enemy->GetAbilitySystemComponent())
+					{
+						return;
+					}
+					Enemy->GetAbilitySystemComponent()->ApplyModToAttribute(
+						UZorbaCombatAttributeSet::GetCombatStaminaAttribute(),
+						EGameplayModOp::Additive,
+						-Enemy->GetCombatAttributes()->GetCombatStamina());
+					FHitResult HitResult;
+					HitResult.ImpactPoint = Enemy->GetActorLocation();
+					Enemy->HandleMeleeHit(this, HitResult);
+					RequestPrimaryAttack();
+				}),
+			0.25f,
+			false);
+	}
+	else if (TestMode.Equals(
+		TEXT("Execution"),
+		ESearchCase::IgnoreCase))
+	{
+		FTimerHandle TestTimer;
+		World->GetTimerManager().SetTimer(
+			TestTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this, FindTestEnemy]()
+				{
+					AZorbaEnemyCharacter* Enemy = FindTestEnemy();
+					UAbilitySystemComponent* PlayerAbilitySystem =
+						GetAbilitySystemComponent();
+					if (!Enemy
+						|| !Enemy->GetAbilitySystemComponent()
+						|| !PlayerAbilitySystem)
+					{
+						return;
+					}
+					Enemy->GetAbilitySystemComponent()->ApplyModToAttribute(
+						UZorbaCombatAttributeSet::GetHealthAttribute(),
+						EGameplayModOp::Additive,
+						-80.0f);
+					PlayerAbilitySystem->ApplyModToAttribute(
+						UZorbaCombatAttributeSet::GetHealthAttribute(),
+						EGameplayModOp::Additive,
+						-60.0f);
+					PlayerAbilitySystem->ApplyModToAttribute(
+						UZorbaCombatAttributeSet::GetCombatStaminaAttribute(),
+						EGameplayModOp::Additive,
+						-75.0f);
+					RequestContextAction();
+				}),
+			0.25f,
+			false);
+	}
+	else if (TestMode.Equals(
+		TEXT("RearDoctrine"),
+		ESearchCase::IgnoreCase)
+		|| TestMode.Equals(
+			TEXT("FrontDoctrineBaseline"),
+			ESearchCase::IgnoreCase))
+	{
+		const bool bRearAttack = TestMode.Equals(
+			TEXT("RearDoctrine"),
+			ESearchCase::IgnoreCase);
+		FTimerHandle DoctrineTimer;
+		World->GetTimerManager().SetTimer(
+			DoctrineTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this, FindTestEnemy, bRearAttack]()
+				{
+					AZorbaEnemyCharacter* Enemy = FindTestEnemy();
+					if (!Enemy || !PrimaryAttackDefinition)
+					{
+						UE_LOG(
+							LogTemp,
+							Error,
+							TEXT("Sacred doctrine automation missing enemy or primary attack."));
+						return;
+					}
+
+					if (UZorbaEnemyCombatBrainComponent* EnemyBrain =
+						Enemy->FindComponentByClass<UZorbaEnemyCombatBrainComponent>())
+					{
+						EnemyBrain->StopBrain();
+					}
+					if (UZorbaMeleeCombatComponent* EnemyCombat =
+						Enemy->FindComponentByClass<UZorbaMeleeCombatComponent>())
+					{
+						EnemyCombat->InterruptAttack(0.0f);
+					}
+					Enemy->StopDefend();
+
+					if (UAbilitySystemComponent* EnemyAbilitySystem =
+						Enemy->GetAbilitySystemComponent())
+					{
+						EnemyAbilitySystem->SetNumericAttributeBase(
+							UZorbaCombatAttributeSet::GetHealthAttribute(),
+							EnemyAbilitySystem->GetNumericAttribute(
+								UZorbaCombatAttributeSet::GetMaxHealthAttribute()));
+						EnemyAbilitySystem->SetNumericAttributeBase(
+							UZorbaCombatAttributeSet::GetCombatStaminaAttribute(),
+							EnemyAbilitySystem->GetNumericAttribute(
+								UZorbaCombatAttributeSet::GetMaxCombatStaminaAttribute()));
+					}
+
+					const FVector EnemyForward = FVector::ForwardVector;
+					Enemy->SetActorRotation(EnemyForward.Rotation());
+					const FVector EnemyLocation = Enemy->GetActorLocation();
+					const FVector TestLocation = EnemyLocation
+						+ EnemyForward * (bRearAttack ? -150.0f : 150.0f);
+					SetActorLocation(
+						TestLocation,
+						false,
+						nullptr,
+						ETeleportType::TeleportPhysics);
+					const FVector AttackDirection =
+						(EnemyLocation - TestLocation).GetSafeNormal2D();
+					SetActorRotation(AttackDirection.Rotation());
+					GetCharacterMovement()->StopMovementImmediately();
+					Enemy->StartDefend(5.0f);
+
+					const bool bAttackStarted = StartAttackDefinition(
+						PrimaryAttackDefinition,
+						AttackDirection,
+						Enemy);
+					UE_LOG(
+						LogTemp,
+						Display,
+						TEXT("Sacred doctrine automation prepared: Rear=%s AttackStarted=%s Enemy=%s"),
+						bRearAttack ? TEXT("true") : TEXT("false"),
+						bAttackStarted ? TEXT("true") : TEXT("false"),
+						*GetNameSafe(Enemy));
+				}),
+			0.25f,
+			false);
+	}
+
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Advanced combat automation armed: Mode=%s"),
+		*TestMode);
+}
+#endif
+
+void AZorbaCharacter::StartDefend()
+{
+	if (bIsDefending
+		|| (MeleeCombatComponent
+			&& MeleeCombatComponent->IsAttackInProgress()))
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+	if (!AbilitySystem
+		|| AbilitySystem->HasMatchingGameplayTag(
+			ZorbaGameplayTags::State_Dead)
+		|| AbilitySystem->GetNumericAttribute(
+			UZorbaCombatAttributeSet::GetCombatStaminaAttribute()) <= 0.0f)
+	{
+		UE_LOG(
+			LogTemp,
+			Verbose,
+			TEXT("Defend rejected: combat stamina is empty or the player is dead."));
+		return;
+	}
+
+	bIsDefending = true;
+	AbilitySystem->AddLooseGameplayTag(
+		ZorbaGameplayTags::State_Defending);
+	AbilitySystem->AddLooseGameplayTag(
+		ZorbaGameplayTags::State_ParryWindow);
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			ParryWindowTimerHandle,
+			this,
+			&AZorbaCharacter::CloseParryWindow,
+			ParryWindowDuration,
+			false);
 	}
 
 	UE_LOG(
 		LogTemp,
 		Log,
-		TEXT("Primary attack requested. Direction: %s"),
-		*AttackDirection.ToCompactString());
-
-	OnPrimaryAttackRequested();
-}
-
-void AZorbaCharacter::RequestHeavyAttack()
-{
-	UE_LOG(LogTemp, Log, TEXT("Heavy attack requested."));
-	OnHeavyAttackRequested();
-}
-
-void AZorbaCharacter::StartDefend()
-{
-	UE_LOG(LogTemp, Log, TEXT("Defend started."));
+		TEXT("Defend started. ParryWindow=%.2fs"),
+		ParryWindowDuration);
 	OnDefendStarted();
 }
 
 void AZorbaCharacter::StopDefend()
 {
+	if (!bIsDefending)
+	{
+		return;
+	}
+
+	bIsDefending = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ParryWindowTimerHandle);
+	}
+
+	if (UAbilitySystemComponent* AbilitySystem =
+		GetAbilitySystemComponent())
+	{
+		AbilitySystem->RemoveLooseGameplayTag(
+			ZorbaGameplayTags::State_ParryWindow);
+		AbilitySystem->RemoveLooseGameplayTag(
+			ZorbaGameplayTags::State_Defending);
+	}
+
 	UE_LOG(LogTemp, Log, TEXT("Defend stopped."));
 	OnDefendStopped();
+}
+
+void AZorbaCharacter::CloseParryWindow()
+{
+	if (UAbilitySystemComponent* AbilitySystem =
+		GetAbilitySystemComponent())
+	{
+		AbilitySystem->RemoveLooseGameplayTag(
+			ZorbaGameplayTags::State_ParryWindow);
+	}
+
+	UE_LOG(LogTemp, Verbose, TEXT("Parry window closed; block remains active."));
+}
+
+#if !UE_BUILD_SHIPPING
+void AZorbaCharacter::ConfigureDefenseForAutomation(
+	bool bKeepParryWindowOpen)
+{
+	StartDefend();
+	if (!bIsDefending)
+	{
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("Defense automation could not enter the defending state."));
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ParryWindowTimerHandle);
+	}
+
+	if (!bKeepParryWindowOpen)
+	{
+		CloseParryWindow();
+	}
+
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Defense automation configured: Mode=%s"),
+		bKeepParryWindowOpen ? TEXT("Parry") : TEXT("Block"));
+}
+#endif
+
+EZorbaMeleeDefenseResult AZorbaCharacter::ResolveIncomingMeleeHit(
+	AActor* SourceActor,
+	const FHitResult& HitResult,
+	const UZorbaAttackDefinition* IncomingAttack,
+	float& InOutHealthDamage,
+	float& InOutStaminaDamage,
+	float& OutParryStaminaDamage)
+{
+	OutParryStaminaDamage = 0.0f;
+	const UAbilitySystemComponent* AbilitySystem =
+		GetAbilitySystemComponent();
+	if (!bIsDefending
+		|| !IsValid(SourceActor)
+		|| !AbilitySystem
+		|| !AbilitySystem->HasMatchingGameplayTag(
+			ZorbaGameplayTags::State_Defending))
+	{
+		return EZorbaMeleeDefenseResult::None;
+	}
+
+	FVector ToSource = SourceActor->GetActorLocation() - GetActorLocation();
+	ToSource.Z = 0.0f;
+	ToSource = ToSource.GetSafeNormal();
+	const FVector FacingDirection = GetActorForwardVector().GetSafeNormal2D();
+	const float MinimumDefenseDot =
+		FMath::Cos(FMath::DegreesToRadians(DefenseHalfAngleDegrees));
+	if (ToSource.IsNearlyZero()
+		|| FVector::DotProduct(FacingDirection, ToSource)
+			< MinimumDefenseDot)
+	{
+		return EZorbaMeleeDefenseResult::None;
+	}
+
+	const EZorbaDefenseInteraction DefenseInteraction = IncomingAttack
+		? IncomingAttack->DefenseInteraction
+		: EZorbaDefenseInteraction::Standard;
+	if (DefenseInteraction == EZorbaDefenseInteraction::DodgeOnly)
+	{
+		return EZorbaMeleeDefenseResult::None;
+	}
+
+	if (AbilitySystem->HasMatchingGameplayTag(
+		ZorbaGameplayTags::State_ParryWindow))
+	{
+		InOutHealthDamage = 0.0f;
+		InOutStaminaDamage = 0.0f;
+		OutParryStaminaDamage = FMath::Max(0.0f, ParryStaminaDamage);
+		return EZorbaMeleeDefenseResult::Parried;
+	}
+
+	if (DefenseInteraction == EZorbaDefenseInteraction::GuardBreak)
+	{
+		StopDefend();
+		OnGuardBroken(SourceActor);
+		return EZorbaMeleeDefenseResult::GuardBroken;
+	}
+
+	InOutHealthDamage *= FMath::Clamp(
+		BlockedHealthDamageMultiplier,
+		0.0f,
+		1.0f);
+	InOutStaminaDamage *= FMath::Max(
+		0.0f,
+		BlockedStaminaDamageMultiplier);
+	return EZorbaMeleeDefenseResult::Blocked;
+}
+
+void AZorbaCharacter::HandleMeleeHit(
+	AActor* SourceActor,
+	const FHitResult& HitResult,
+	EZorbaMeleeDefenseResult DefenseResult)
+{
+	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+	if (!AbilitySystem)
+	{
+		return;
+	}
+
+	const float RemainingHealth = AbilitySystem->GetNumericAttribute(
+		UZorbaCombatAttributeSet::GetHealthAttribute());
+	const float RemainingStamina = AbilitySystem->GetNumericAttribute(
+		UZorbaCombatAttributeSet::GetCombatStaminaAttribute());
+	CombatStaminaRecoveryDelayRemaining = CombatStaminaRecoveryDelay;
+
+	if (RemainingStamina <= 0.0f)
+	{
+		AbilitySystem->AddLooseGameplayTag(
+			ZorbaGameplayTags::State_StaminaDepleted);
+		StopDefend();
+	}
+
+	if (RemainingHealth <= 0.0f)
+	{
+		AbilitySystem->AddLooseGameplayTag(
+			ZorbaGameplayTags::State_Dead);
+		GetCharacterMovement()->DisableMovement();
+		StopDefend();
+	}
+
+	if (GetWorld())
+	{
+		const FColor DebugColor =
+			DefenseResult == EZorbaMeleeDefenseResult::Parried
+				? FColor::Green
+				: DefenseResult == EZorbaMeleeDefenseResult::Blocked
+					? FColor::Blue
+					: DefenseResult == EZorbaMeleeDefenseResult::GuardBroken
+						? FColor::Orange
+						: FColor::Red;
+		DrawDebugPoint(
+			GetWorld(),
+			HitResult.ImpactPoint,
+			24.0f,
+			DebugColor,
+			false,
+			1.0f,
+			0);
+	}
+
+	OnMeleeHitReceived(
+		SourceActor,
+		HitResult,
+		DefenseResult,
+		RemainingHealth,
+		RemainingStamina);
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("Player melee result: Defense=%s Health=%.1f Stamina=%.1f"),
+		DefenseResult == EZorbaMeleeDefenseResult::Parried
+			? TEXT("Parried")
+			: DefenseResult == EZorbaMeleeDefenseResult::Blocked
+				? TEXT("Blocked")
+				: DefenseResult == EZorbaMeleeDefenseResult::GuardBroken
+					? TEXT("GuardBroken")
+					: TEXT("None"),
+		RemainingHealth,
+		RemainingStamina);
 }
 
 void AZorbaCharacter::RequestDodge()
@@ -699,6 +1434,12 @@ void AZorbaCharacter::FinishDarkForm()
 void AZorbaCharacter::RequestContextAction()
 {
 	if (TryRouteAbilityLayerFaceButton(3))
+	{
+		return;
+	}
+
+	if (!bIsDefending
+		&& TryStartExecution(ResolveAttackDirection()))
 	{
 		return;
 	}
