@@ -66,6 +66,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Zorba|Combat")
 	bool IsExhausted() const;
 
+	UFUNCTION(BlueprintPure, Category = "Zorba|Combat|Special Pattern")
+	bool IsEnraged() const;
+
+	UFUNCTION(BlueprintPure, Category = "Zorba|Combat|Special Pattern")
+	bool IsStunned() const;
+
 	UFUNCTION(BlueprintPure, Category = "Zorba|Combat")
 	EZorbaEnemyCombatRank GetCombatRank() const { return CombatRank; }
 
@@ -101,6 +107,16 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Zorba|Combat|Defense")
 	void StopDefend();
+
+	/** Starts the breakable enrage pattern. Returns false when this enemy cannot enter it. */
+	UFUNCTION(BlueprintCallable, Category = "Zorba|Combat|Special Pattern")
+	bool StartEnrage();
+
+	/** Removes enrage and applies the first forbidden technique's control window. */
+	UFUNCTION(BlueprintCallable, Category = "Zorba|Combat|Forbidden Technique")
+	bool BreakEnrageWithForbiddenTechnique(
+		AActor* SourceActor,
+		float StunDuration);
 
 	UPROPERTY(BlueprintAssignable, Category = "Zorba|Combat")
 	FZorbaEnemyDeathSignature OnEnemyDied;
@@ -180,6 +196,18 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat|Defense")
 	void OnGuardBroken(AActor* SourceActor);
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat|Special Pattern")
+	void OnEnrageStarted();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat|Special Pattern")
+	void OnEnrageEnded(bool bBrokenByForbiddenTechnique);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat|Forbidden Technique")
+	void OnForbiddenTechniqueStunned(AActor* SourceActor, float StunDuration);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat|Forbidden Technique")
+	void OnForbiddenTechniqueStunEnded();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zorba|Combat")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
@@ -243,6 +271,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zorba|Combat|Exhausted", meta = (ClampMin = "0.0"))
 	float ExhaustedRecoveryStamina = 50.0f;
 
+	/** Fodder never enrages; this enables the one-shot pattern for elite/boss ranks. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zorba|Combat|Special Pattern")
+	bool bCanEnrage = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zorba|Combat|Special Pattern", meta = (ClampMin = "0.05", ClampMax = "0.95"))
+	float EnrageHealthThresholdFraction = 0.5f;
+
 private:
 	bool ApplyCombatDeltaFrom(
 		AActor* SourceActor,
@@ -253,9 +288,14 @@ private:
 	void ClearHitReact();
 	void EnterExhausted();
 	void RecoverFromExhausted();
+	void TryStartEnrageFromHealth();
+	void ClearForbiddenTechniqueStun();
+	void RefreshCombatRoleLabel();
 
 	FTimerHandle HitReactTimerHandle;
 	FTimerHandle ExhaustedTimerHandle;
 	FTimerHandle DefenseTimerHandle;
+	FTimerHandle ForbiddenTechniqueStunTimerHandle;
 	bool bSpecialAttackReactionActive = false;
+	bool bEnragePatternTriggered = false;
 };

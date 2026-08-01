@@ -108,12 +108,7 @@ void AZorbaEnemyCharacter::BeginPlay()
 	}
 	if (CombatRoleLabel)
 	{
-		const bool bFodder = CombatRank == EZorbaEnemyCombatRank::Fodder;
-		CombatRoleLabel->SetText(
-			FText::FromString(bFodder ? TEXT("FODDER") : TEXT("ELITE")));
-		CombatRoleLabel->SetTextRenderColor(
-			bFodder ? FColor::Yellow : FColor::Orange);
-		CombatRoleLabel->SetVisibility(bShowCombatRoleLabel);
+		RefreshCombatRoleLabel();
 	}
 }
 
@@ -147,6 +142,20 @@ bool AZorbaEnemyCharacter::IsExhausted() const
 	return AbilitySystemComponent
 		&& AbilitySystemComponent->HasMatchingGameplayTag(
 			ZorbaGameplayTags::State_Exhausted);
+}
+
+bool AZorbaEnemyCharacter::IsEnraged() const
+{
+	return AbilitySystemComponent
+		&& AbilitySystemComponent->HasMatchingGameplayTag(
+			ZorbaGameplayTags::State_Enraged);
+}
+
+bool AZorbaEnemyCharacter::IsStunned() const
+{
+	return AbilitySystemComponent
+		&& AbilitySystemComponent->HasMatchingGameplayTag(
+			ZorbaGameplayTags::State_Stunned);
 }
 
 bool AZorbaEnemyCharacter::IsDefending() const
@@ -220,6 +229,8 @@ void AZorbaEnemyCharacter::StartDefend(float Duration)
 		|| !AbilitySystemComponent
 		|| IsDead()
 		|| IsExhausted()
+		|| IsEnraged()
+		|| IsStunned()
 		|| AbilitySystemComponent->HasMatchingGameplayTag(
 			ZorbaGameplayTags::State_HitReact)
 		|| (MeleeCombatComponent && MeleeCombatComponent->IsAttackInProgress()))
@@ -268,6 +279,106 @@ void AZorbaEnemyCharacter::StopDefend()
 	UE_LOG(LogTemp, Log, TEXT("Enemy defense stopped: %s"), *GetNameSafe(this));
 }
 
+bool AZorbaEnemyCharacter::StartEnrage()
+{
+	if (!HasAuthority()
+		|| !AbilitySystemComponent
+		|| !bCanEnrage
+		|| bEnragePatternTriggered
+		|| CombatRank == EZorbaEnemyCombatRank::Fodder
+		|| IsDead()
+		|| IsExhausted()
+		|| IsStunned())
+	{
+		return false;
+	}
+
+	bEnragePatternTriggered = true;
+	StopDefend();
+	AbilitySystemComponent->AddLooseGameplayTag(
+		ZorbaGameplayTags::State_Enraged);
+	RefreshCombatRoleLabel();
+	OnEnrageStarted();
+
+#if !UE_BUILD_SHIPPING
+	DrawDebugString(
+		GetWorld(),
+		GetActorLocation() + FVector(0.0f, 0.0f, 185.0f),
+		TEXT("ENRAGED - BREAK WITH FORBIDDEN 1"),
+		nullptr,
+		FColor::Red,
+		2.5f,
+		true,
+		1.25f);
+#endif
+
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Enemy enrage pattern started: Enemy=%s Health=%.1f"),
+		*GetNameSafe(this),
+		CombatAttributes ? CombatAttributes->GetHealth() : 0.0f);
+	return true;
+}
+
+bool AZorbaEnemyCharacter::BreakEnrageWithForbiddenTechnique(
+	AActor* SourceActor,
+	float StunDuration)
+{
+	if (!HasAuthority()
+		|| !AbilitySystemComponent
+		|| !IsValid(SourceActor)
+		|| IsDead()
+		|| !IsEnraged()
+		|| IsStunned())
+	{
+		return false;
+	}
+
+	const float SafeStunDuration = FMath::Max(0.05f, StunDuration);
+	AbilitySystemComponent->RemoveLooseGameplayTag(
+		ZorbaGameplayTags::State_Enraged);
+	AbilitySystemComponent->AddLooseGameplayTag(
+		ZorbaGameplayTags::State_Stunned);
+	OnEnrageEnded(true);
+	StopDefend();
+	if (MeleeCombatComponent)
+	{
+		MeleeCombatComponent->InterruptAttack(0.0f);
+	}
+	GetCharacterMovement()->StopMovementImmediately();
+	GetCharacterMovement()->DisableMovement();
+	GetWorldTimerManager().SetTimer(
+		ForbiddenTechniqueStunTimerHandle,
+		this,
+		&AZorbaEnemyCharacter::ClearForbiddenTechniqueStun,
+		SafeStunDuration,
+		false);
+	RefreshCombatRoleLabel();
+	OnForbiddenTechniqueStunned(SourceActor, SafeStunDuration);
+
+#if !UE_BUILD_SHIPPING
+	DrawDebugString(
+		GetWorld(),
+		GetActorLocation() + FVector(0.0f, 0.0f, 185.0f),
+		TEXT("FORBIDDEN BREAK - STUNNED"),
+		nullptr,
+		FColor(160, 64, 255),
+		SafeStunDuration,
+		true,
+		1.35f);
+#endif
+
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Forbidden technique broke enrage: Enemy=%s Source=%s Stun=%.2f"),
+		*GetNameSafe(this),
+		*GetNameSafe(SourceActor),
+		SafeStunDuration);
+	return true;
+}
+
 void AZorbaEnemyCharacter::HandleMeleeHit(
 	AActor* SourceActor,
 	const FHitResult& HitResult)
@@ -296,6 +407,8 @@ void AZorbaEnemyCharacter::HandleMeleeHit(
 		Die(SourceActor, HitResult);
 		return;
 	}
+
+	TryStartEnrageFromHealth();
 
 	FVector ReactionDirection = FVector::ZeroVector;
 	if (SourceActor)
@@ -539,6 +652,18 @@ void AZorbaEnemyCharacter::Die(
 		ZorbaGameplayTags::State_Dead);
 	GetWorldTimerManager().ClearTimer(ExhaustedTimerHandle);
 	GetWorldTimerManager().ClearTimer(HitReactTimerHandle);
+	GetWorldTimerManager().ClearTimer(ForbiddenTechniqueStunTimerHandle);
+	if (IsEnraged())
+	{
+		AbilitySystemComponent->RemoveLooseGameplayTag(
+			ZorbaGameplayTags::State_Enraged);
+		OnEnrageEnded(false);
+	}
+	if (IsStunned())
+	{
+		AbilitySystemComponent->RemoveLooseGameplayTag(
+			ZorbaGameplayTags::State_Stunned);
+	}
 	StopDefend();
 	if (MeleeCombatComponent)
 	{
@@ -686,4 +811,86 @@ void AZorbaEnemyCharacter::ClearHitReact()
 		AbilitySystemComponent->RemoveLooseGameplayTag(
 			ZorbaGameplayTags::State_HitReact);
 	}
+}
+
+void AZorbaEnemyCharacter::TryStartEnrageFromHealth()
+{
+	if (!CombatAttributes
+		|| bEnragePatternTriggered
+		|| CombatRank == EZorbaEnemyCombatRank::Fodder)
+	{
+		return;
+	}
+
+	const float MaxHealth = CombatAttributes->GetMaxHealth();
+	if (MaxHealth > 0.0f
+		&& CombatAttributes->GetHealth()
+			<= MaxHealth * FMath::Clamp(EnrageHealthThresholdFraction, 0.05f, 0.95f))
+	{
+		StartEnrage();
+	}
+}
+
+void AZorbaEnemyCharacter::ClearForbiddenTechniqueStun()
+{
+	GetWorldTimerManager().ClearTimer(ForbiddenTechniqueStunTimerHandle);
+	if (!AbilitySystemComponent || !IsStunned())
+	{
+		return;
+	}
+
+	AbilitySystemComponent->RemoveLooseGameplayTag(
+		ZorbaGameplayTags::State_Stunned);
+	const bool bHasOtherHitReaction =
+		AbilitySystemComponent->HasMatchingGameplayTag(
+			ZorbaGameplayTags::State_HitReact);
+	if (!IsDead()
+		&& !IsExhausted()
+		&& !bSpecialAttackReactionActive
+		&& !bHasOtherHitReaction)
+	{
+		GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	}
+	RefreshCombatRoleLabel();
+	OnForbiddenTechniqueStunEnded();
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Forbidden technique stun ended: Enemy=%s Enraged=%s"),
+		*GetNameSafe(this),
+		IsEnraged() ? TEXT("true") : TEXT("false"));
+}
+
+void AZorbaEnemyCharacter::RefreshCombatRoleLabel()
+{
+	if (!CombatRoleLabel)
+	{
+		return;
+	}
+
+	const bool bFodder = CombatRank == EZorbaEnemyCombatRank::Fodder;
+	const TCHAR* RankLabel = bFodder
+		? TEXT("FODDER")
+		: CombatRank == EZorbaEnemyCombatRank::Boss
+			? TEXT("BOSS")
+			: TEXT("ELITE");
+	if (IsStunned())
+	{
+		CombatRoleLabel->SetText(
+			FText::FromString(FString::Printf(TEXT("%s\nSTUNNED"), RankLabel)));
+		CombatRoleLabel->SetTextRenderColor(FColor(160, 64, 255));
+	}
+	else if (IsEnraged())
+	{
+		CombatRoleLabel->SetText(
+			FText::FromString(FString::Printf(TEXT("%s\nENRAGED"), RankLabel)));
+		CombatRoleLabel->SetTextRenderColor(FColor::Red);
+	}
+	else
+	{
+		CombatRoleLabel->SetText(FText::FromString(RankLabel));
+		CombatRoleLabel->SetTextRenderColor(
+			bFodder ? FColor::Yellow : FColor::Orange);
+	}
+	CombatRoleLabel->SetVisibility(bShowCombatRoleLabel && !IsDead());
 }

@@ -13,12 +13,22 @@
 
 class UCameraComponent;
 class UAbilitySystemComponent;
+class AZorbaEnemyCharacter;
 class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
 class UStaticMeshComponent;
 struct FInputActionValue;
 class UZorbaMeleeCombatComponent;
+
+UENUM(BlueprintType)
+enum class EZorbaForbiddenTechniqueFailure : uint8
+{
+	None,
+	InvalidState,
+	Cooldown,
+	NoEnragedTarget
+};
 
 UCLASS()
 class ZORBA_API AZorbaCharacter :
@@ -57,6 +67,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Zorba|Combat|Defense")
 	bool IsDefending() const { return bIsDefending; }
+
+	UFUNCTION(BlueprintPure, Category = "Zorba|Combat|Forbidden Technique")
+	float GetForbiddenTechniqueSlot1CooldownRemaining() const;
 
 #if !UE_BUILD_SHIPPING
 	void ConfigureDefenseForAutomation(bool bKeepParryWindowOpen);
@@ -198,6 +211,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Stamina", meta = (ClampMin = "0.0"))
 	float CombatStaminaRecoveryPerSecond = 30.0f;
 
+	/** Slot 1 is a short, aimed pattern-break rather than a general damage spell. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Forbidden Technique", meta = (ClampMin = "0.0", Units = "cm"))
+	float ForbiddenTechniqueSlot1Range = 1000.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Forbidden Technique", meta = (ClampMin = "0.0", ClampMax = "180.0", Units = "Degrees"))
+	float ForbiddenTechniqueSlot1HalfAngleDegrees = 55.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Forbidden Technique", meta = (ClampMin = "0.05", Units = "s"))
+	float ForbiddenTechniqueSlot1StunDuration = 2.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Combat|Forbidden Technique", meta = (ClampMin = "0.0", Units = "s"))
+	float ForbiddenTechniqueSlot1Cooldown = 8.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zorba|Camera")
 	float GamepadTurnRate = 140.0f;
 
@@ -250,6 +276,14 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
 	void OnAbilitySlotRequested(int32 SlotIndex);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat|Forbidden Technique")
+	void OnForbiddenTechniqueSlot1Started(AActor* TargetActor);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat|Forbidden Technique")
+	void OnForbiddenTechniqueSlot1Denied(
+		EZorbaForbiddenTechniqueFailure Failure,
+		float CooldownRemaining);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Zorba|Combat")
 	void OnRelicRequested();
@@ -306,6 +340,9 @@ private:
 	void RequestAbilitySlot3();
 	void RequestAbilitySlot4();
 	void RequestAbilitySlot(int32 SlotIndex);
+	bool TryUseForbiddenTechniqueSlot1();
+	AZorbaEnemyCharacter* FindForbiddenTechniqueSlot1Target(
+		const FVector& AimDirection) const;
 	bool TryRouteAbilityLayerFaceButton(int32 SlotIndex);
 	void RequestRelic();
 	void ShowObjective();
@@ -319,6 +356,7 @@ private:
 	bool bIsInDarkForm = false;
 	bool bIsDefending = false;
 	float LastDarkFormTime = -1000.0f;
+	float LastForbiddenTechniqueSlot1Time = -1000.0f;
 	float CombatStaminaRecoveryDelayRemaining = 0.0f;
 	FTimerHandle DarkFormTimerHandle;
 	FTimerHandle ParryWindowTimerHandle;

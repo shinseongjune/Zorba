@@ -135,4 +135,12 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Defense", meta = (ClampMin = "0.0", Units = "s"))
 	float DefenseCooldown = 4.0f;
+
+	/** Enrage is an offensive pattern: movement speeds up and defensive choices stop. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enrage", meta = (ClampMin = "1.0"))
+	float EnragedMovementSpeedMultiplier = 1.35f;
+
+	/** Multiplies decision, observe, attack-cooldown and recovery delays while enraged. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enrage", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float EnragedActionDelayMultiplier = 0.6f;
 };

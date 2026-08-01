@@ -138,6 +138,7 @@ void UZorbaEnemyCombatBrainComponent::TickComponent(
 	const UAbilitySystemComponent* OwnerAbilitySystem =
 		EnemyOwner->GetAbilitySystemComponent();
 	if (EnemyOwner->IsExhausted()
+		|| EnemyOwner->IsStunned()
 		|| (OwnerAbilitySystem
 			&& OwnerAbilitySystem->HasMatchingGameplayTag(
 				ZorbaGameplayTags::State_HitReact)))
@@ -254,8 +255,13 @@ bool UZorbaEnemyCombatBrainComponent::CanEngageTarget(
 
 void UZorbaEnemyCombatBrainComponent::UpdateDecision(float CurrentTime)
 {
+	const float ActionDelayMultiplier = EnemyOwner->IsEnraged()
+		? FMath::Clamp(ActiveProfile->EnragedActionDelayMultiplier, 0.1f, 1.0f)
+		: 1.0f;
 	NextDecisionTime = CurrentTime
-		+ FMath::Max(0.05f, ActiveProfile->DecisionInterval);
+		+ FMath::Max(
+			0.05f,
+			ActiveProfile->DecisionInterval * ActionDelayMultiplier);
 #if !UE_BUILD_SHIPPING
 	if (bMovementAutomation)
 	{
@@ -299,10 +305,24 @@ void UZorbaEnemyCombatBrainComponent::BeginObserve(float CurrentTime)
 #endif
 		FMath::RandBool() ? 1.0f : -1.0f;
 	const float MinimumDuration =
-		FMath::Max(0.05f, ActiveProfile->MinimumObserveDuration);
+		FMath::Max(
+			0.05f,
+			ActiveProfile->MinimumObserveDuration
+				* (EnemyOwner->IsEnraged()
+					? FMath::Clamp(
+						ActiveProfile->EnragedActionDelayMultiplier,
+						0.1f,
+						1.0f)
+					: 1.0f));
 	const float MaximumDuration = FMath::Max(
 		MinimumDuration,
-		ActiveProfile->MaximumObserveDuration);
+		ActiveProfile->MaximumObserveDuration
+			* (EnemyOwner->IsEnraged()
+				? FMath::Clamp(
+					ActiveProfile->EnragedActionDelayMultiplier,
+					0.1f,
+					1.0f)
+				: 1.0f));
 	StateEndTime = CurrentTime
 		+ FMath::FRandRange(MinimumDuration, MaximumDuration);
 	SetState(EZorbaEnemyBrainState::Observe);
@@ -369,7 +389,8 @@ void UZorbaEnemyCombatBrainComponent::UpdateObserveMovement(float CurrentTime)
 
 bool UZorbaEnemyCombatBrainComponent::TryBeginDefense(float CurrentTime)
 {
-	if (CurrentTime < NextDefenseTime
+	if (EnemyOwner->IsEnraged()
+		|| CurrentTime < NextDefenseTime
 		|| ActiveProfile->DefenseChance <= 0.0f
 		|| FMath::FRand() > ActiveProfile->DefenseChance)
 	{
@@ -604,8 +625,13 @@ void UZorbaEnemyCombatBrainComponent::UpdateAttack(float CurrentTime)
 	}
 
 	ReleaseCombatTokens();
+	const float ActionDelayMultiplier = EnemyOwner->IsEnraged()
+		? FMath::Clamp(ActiveProfile->EnragedActionDelayMultiplier, 0.1f, 1.0f)
+		: 1.0f;
 	StateEndTime = CurrentTime
-		+ FMath::Max(0.0f, ActiveProfile->PostAttackRecovery);
+		+ FMath::Max(
+			0.0f,
+			ActiveProfile->PostAttackRecovery * ActionDelayMultiplier);
 	NextDecisionTime = StateEndTime;
 	SetState(EZorbaEnemyBrainState::Recover);
 }
@@ -618,8 +644,12 @@ void UZorbaEnemyCombatBrainComponent::MoveToward(
 	Delta.Z = 0.0f;
 	UCharacterMovementComponent* Movement =
 		EnemyOwner->GetCharacterMovement();
+	const float EnragedSpeedMultiplier = EnemyOwner->IsEnraged()
+		? FMath::Max(1.0f, ActiveProfile->EnragedMovementSpeedMultiplier)
+		: 1.0f;
 	Movement->MaxWalkSpeed = BaseWalkSpeed
-		* FMath::Max(0.1f, SpeedMultiplier);
+		* FMath::Max(0.1f, SpeedMultiplier)
+		* EnragedSpeedMultiplier;
 	if (Delta.SizeSquared() <= FMath::Square(
 		FMath::Max(1.0f, ActiveProfile->MovementAcceptanceRadius)))
 	{
@@ -709,7 +739,15 @@ void UZorbaEnemyCombatBrainComponent::ReleaseCombatTokens()
 float UZorbaEnemyCombatBrainComponent::ResolveOptionCooldown(
 	const FZorbaEnemyAttackOption& Option) const
 {
-	return FMath::Max(0.0f, Option.Cooldown);
+	const float ActionDelayMultiplier = EnemyOwner.IsValid()
+		&& EnemyOwner->IsEnraged()
+		&& IsValid(ActiveProfile)
+		? FMath::Clamp(
+			ActiveProfile->EnragedActionDelayMultiplier,
+			0.1f,
+			1.0f)
+		: 1.0f;
+	return FMath::Max(0.0f, Option.Cooldown * ActionDelayMultiplier);
 }
 
 #if !UE_BUILD_SHIPPING

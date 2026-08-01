@@ -55,6 +55,16 @@ namespace ZorbaGameplayTags
 		"Enemy is vulnerable to an opportunity attack.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		State_Enraged,
+		"State.Enraged",
+		"Enemy special pattern is enraged and can be broken by a forbidden technique.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		State_Stunned,
+		"State.Stunned",
+		"Actor cannot move or attack until the stun ends.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		State_Dead,
 		"State.Dead",
 		"Actor is dead.");

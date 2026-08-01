@@ -281,6 +281,8 @@ bool UZorbaEnemyBasicAttackComponent::CanEngageTarget(
 		|| SourceAbilitySystem->HasMatchingGameplayTag(
 			ZorbaGameplayTags::State_Exhausted)
 		|| SourceAbilitySystem->HasMatchingGameplayTag(
+			ZorbaGameplayTags::State_Stunned)
+		|| SourceAbilitySystem->HasMatchingGameplayTag(
 			ZorbaGameplayTags::State_Dead)
 		|| TargetAbilitySystem->HasMatchingGameplayTag(
 			ZorbaGameplayTags::State_Dead)
@@ -335,6 +337,8 @@ bool UZorbaEnemyBasicAttackComponent::IsTargetInAttackRange(
 		|| !TargetAbilitySystem
 		|| SourceAbilitySystem->HasMatchingGameplayTag(
 			ZorbaGameplayTags::State_Dead)
+		|| SourceAbilitySystem->HasMatchingGameplayTag(
+			ZorbaGameplayTags::State_Stunned)
 		|| TargetAbilitySystem->HasMatchingGameplayTag(
 			ZorbaGameplayTags::State_Dead))
 	{

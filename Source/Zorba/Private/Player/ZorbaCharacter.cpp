@@ -89,6 +89,20 @@ UAbilitySystemComponent* AZorbaCharacter::GetAbilitySystemComponent() const
 	return nullptr;
 }
 
+float AZorbaCharacter::GetForbiddenTechniqueSlot1CooldownRemaining() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return 0.0f;
+	}
+
+	return FMath::Max(
+		0.0f,
+		ForbiddenTechniqueSlot1Cooldown
+			- (World->GetTimeSeconds() - LastForbiddenTechniqueSlot1Time));
+}
+
 void AZorbaCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -1063,6 +1077,101 @@ void AZorbaCharacter::ConfigureAdvancedCombatAutomation()
 			0.25f,
 			false);
 	}
+	else if (TestMode.Equals(
+		TEXT("ForbiddenTechnique"),
+		ESearchCase::IgnoreCase))
+	{
+		FTimerHandle ForbiddenTechniqueTimer;
+		World->GetTimerManager().SetTimer(
+			ForbiddenTechniqueTimer,
+			FTimerDelegate::CreateWeakLambda(
+				this,
+				[this, FindTestEnemy]()
+				{
+					AZorbaEnemyCharacter* Enemy = FindTestEnemy();
+					if (!Enemy
+						|| !Enemy->GetAbilitySystemComponent()
+						|| !Enemy->GetCombatAttributes())
+					{
+						UE_LOG(
+							LogTemp,
+							Error,
+							TEXT("Forbidden technique automation missing an eligible enemy."));
+						return;
+					}
+
+					RequestAbilitySlot(1);
+					UE_LOG(
+						LogTemp,
+						Display,
+						TEXT("Forbidden technique automation invalid target: Cooldown=%.2f"),
+						GetForbiddenTechniqueSlot1CooldownRemaining());
+
+					if (UZorbaEnemyCombatBrainComponent* EnemyBrain =
+						Enemy->FindComponentByClass<UZorbaEnemyCombatBrainComponent>())
+					{
+						EnemyBrain->StopBrain();
+					}
+					Enemy->StopDefend();
+					const FVector EnemyLocation = Enemy->GetActorLocation();
+					const FVector TestLocation = EnemyLocation - FVector::ForwardVector * 400.0f;
+					SetActorLocation(
+						TestLocation,
+						false,
+						nullptr,
+						ETeleportType::TeleportPhysics);
+					SetActorRotation((EnemyLocation - TestLocation).Rotation());
+					GetCharacterMovement()->StopMovementImmediately();
+
+					UAbilitySystemComponent* EnemyAbilitySystem =
+						Enemy->GetAbilitySystemComponent();
+					const float MaxHealth = EnemyAbilitySystem->GetNumericAttribute(
+						UZorbaCombatAttributeSet::GetMaxHealthAttribute());
+					EnemyAbilitySystem->SetNumericAttributeBase(
+						UZorbaCombatAttributeSet::GetHealthAttribute(),
+						MaxHealth * 0.4f);
+					FHitResult PatternTriggerHit;
+					PatternTriggerHit.ImpactPoint = EnemyLocation;
+					Enemy->HandleMeleeHit(this, PatternTriggerHit);
+
+					const bool bWasEnraged = Enemy->IsEnraged();
+					RequestAbilitySlot(1);
+					UE_LOG(
+						LogTemp,
+						Display,
+						TEXT("Forbidden technique automation activation: Enemy=%s WasEnraged=%s IsEnraged=%s IsStunned=%s Cooldown=%.2f"),
+						*GetNameSafe(Enemy),
+						bWasEnraged ? TEXT("true") : TEXT("false"),
+						Enemy->IsEnraged() ? TEXT("true") : TEXT("false"),
+						Enemy->IsStunned() ? TEXT("true") : TEXT("false"),
+						GetForbiddenTechniqueSlot1CooldownRemaining());
+
+					// A successful cast owns the cooldown even though the first target is no longer enraged.
+					RequestAbilitySlot(1);
+					TWeakObjectPtr<AZorbaEnemyCharacter> WeakEnemy = Enemy;
+					FTimerHandle RecoveryTimer;
+					GetWorldTimerManager().SetTimer(
+						RecoveryTimer,
+						FTimerDelegate::CreateWeakLambda(
+							this,
+							[this, WeakEnemy]()
+							{
+								const AZorbaEnemyCharacter* RecoveredEnemy = WeakEnemy.Get();
+								UE_LOG(
+									LogTemp,
+									Display,
+									TEXT("Forbidden technique automation recovery: Enemy=%s IsEnraged=%s IsStunned=%s Cooldown=%.2f"),
+									*GetNameSafe(RecoveredEnemy),
+									RecoveredEnemy && RecoveredEnemy->IsEnraged() ? TEXT("true") : TEXT("false"),
+									RecoveredEnemy && RecoveredEnemy->IsStunned() ? TEXT("true") : TEXT("false"),
+									GetForbiddenTechniqueSlot1CooldownRemaining());
+							}),
+						ForbiddenTechniqueSlot1StunDuration + 0.35f,
+						false);
+				}),
+			0.25f,
+			false);
+	}
 
 	UE_LOG(
 		LogTemp,
@@ -1483,6 +1592,160 @@ void AZorbaCharacter::RequestAbilitySlot(int32 SlotIndex)
 {
 	UE_LOG(LogTemp, Log, TEXT("Ability slot %d requested."), SlotIndex);
 	OnAbilitySlotRequested(SlotIndex);
+	if (SlotIndex == 1)
+	{
+		TryUseForbiddenTechniqueSlot1();
+		return;
+	}
+}
+
+bool AZorbaCharacter::TryUseForbiddenTechniqueSlot1()
+{
+	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+	if (!HasAuthority()
+		|| !AbilitySystem
+		|| bIsDefending
+		|| bIsInDarkForm
+		|| (MeleeCombatComponent && MeleeCombatComponent->IsAttackInProgress())
+		|| AbilitySystem->HasMatchingGameplayTag(ZorbaGameplayTags::State_Dead)
+		|| AbilitySystem->HasMatchingGameplayTag(ZorbaGameplayTags::State_Stunned))
+	{
+		OnForbiddenTechniqueSlot1Denied(
+			EZorbaForbiddenTechniqueFailure::InvalidState,
+			GetForbiddenTechniqueSlot1CooldownRemaining());
+		UE_LOG(LogTemp, Log, TEXT("Forbidden technique slot 1 denied: InvalidState"));
+		return false;
+	}
+
+	const float CooldownRemaining =
+		GetForbiddenTechniqueSlot1CooldownRemaining();
+	if (CooldownRemaining > 0.0f)
+	{
+		OnForbiddenTechniqueSlot1Denied(
+			EZorbaForbiddenTechniqueFailure::Cooldown,
+			CooldownRemaining);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("Forbidden technique slot 1 denied: Cooldown=%.2f"),
+			CooldownRemaining);
+		return false;
+	}
+
+	FVector AimDirection = ResolveAttackDirection().GetSafeNormal2D();
+	if (AimDirection.IsNearlyZero())
+	{
+		AimDirection = GetActorForwardVector().GetSafeNormal2D();
+	}
+	AZorbaEnemyCharacter* Target =
+		FindForbiddenTechniqueSlot1Target(AimDirection);
+	if (!Target)
+	{
+		OnForbiddenTechniqueSlot1Denied(
+			EZorbaForbiddenTechniqueFailure::NoEnragedTarget,
+			0.0f);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("Forbidden technique slot 1 denied: NoEnragedTarget Range=%.1f HalfAngle=%.1f"),
+			ForbiddenTechniqueSlot1Range,
+			ForbiddenTechniqueSlot1HalfAngleDegrees);
+		return false;
+	}
+
+	if (!Target->BreakEnrageWithForbiddenTechnique(
+		this,
+		ForbiddenTechniqueSlot1StunDuration))
+	{
+		OnForbiddenTechniqueSlot1Denied(
+			EZorbaForbiddenTechniqueFailure::NoEnragedTarget,
+			0.0f);
+		return false;
+	}
+
+	LastForbiddenTechniqueSlot1Time = GetWorld()
+		? GetWorld()->GetTimeSeconds()
+		: 0.0f;
+	OnForbiddenTechniqueSlot1Started(Target);
+#if !UE_BUILD_SHIPPING
+	DrawDebugDirectionalArrow(
+		GetWorld(),
+		GetActorLocation() + FVector(0.0f, 0.0f, 80.0f),
+		Target->GetActorLocation() + FVector(0.0f, 0.0f, 80.0f),
+		45.0f,
+		FColor(160, 64, 255),
+		false,
+		1.5f,
+		0,
+		4.0f);
+#endif
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Forbidden technique slot 1 activated: Target=%s Stun=%.2f Cooldown=%.2f"),
+		*GetNameSafe(Target),
+		ForbiddenTechniqueSlot1StunDuration,
+		ForbiddenTechniqueSlot1Cooldown);
+	return true;
+}
+
+AZorbaEnemyCharacter* AZorbaCharacter::FindForbiddenTechniqueSlot1Target(
+	const FVector& AimDirection) const
+{
+	TArray<AActor*> EnemyActors;
+	UGameplayStatics::GetAllActorsOfClass(
+		this,
+		AZorbaEnemyCharacter::StaticClass(),
+		EnemyActors);
+
+	const float SafeRange = FMath::Max(0.0f, ForbiddenTechniqueSlot1Range);
+	const float MinimumAimDot = FMath::Cos(FMath::DegreesToRadians(
+		FMath::Clamp(ForbiddenTechniqueSlot1HalfAngleDegrees, 0.0f, 180.0f)));
+	const FVector SafeAimDirection = AimDirection.GetSafeNormal2D();
+	AZorbaEnemyCharacter* BestTarget = nullptr;
+	float BestScore = -BIG_NUMBER;
+	for (AActor* EnemyActor : EnemyActors)
+	{
+		AZorbaEnemyCharacter* Enemy = Cast<AZorbaEnemyCharacter>(EnemyActor);
+		if (!Enemy
+			|| Enemy->IsDead()
+			|| !Enemy->IsEnraged()
+			|| Enemy->GetGenericTeamId() == GetGenericTeamId())
+		{
+			continue;
+		}
+
+		FVector ToEnemy = Enemy->GetActorLocation() - GetActorLocation();
+		ToEnemy.Z = 0.0f;
+		const float Distance = ToEnemy.Size();
+		if (Distance > SafeRange)
+		{
+			continue;
+		}
+
+		const FVector DirectionToEnemy = Distance > UE_KINDA_SMALL_NUMBER
+			? ToEnemy / Distance
+			: SafeAimDirection;
+		const float AimDot = FVector::DotProduct(
+			SafeAimDirection,
+			DirectionToEnemy);
+		if (AimDot < MinimumAimDot)
+		{
+			continue;
+		}
+
+		const float DistanceScore = SafeRange > UE_KINDA_SMALL_NUMBER
+			? 1.0f - Distance / SafeRange
+			: 1.0f;
+		const float Score = AimDot * 2.0f + DistanceScore;
+		if (Score > BestScore)
+		{
+			BestScore = Score;
+			BestTarget = Enemy;
+		}
+	}
+
+	return BestTarget;
 }
 
 bool AZorbaCharacter::TryRouteAbilityLayerFaceButton(int32 SlotIndex)
