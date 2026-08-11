@@ -23,6 +23,10 @@ void AZorbaGameState::SetSessionPhase(EZorbaSessionPhase NewPhase)
 	{
 		return;
 	}
+	if (SessionPhase == NewPhase)
+	{
+		return;
+	}
 
 	SessionPhase = NewPhase;
 	OnRep_SessionPhase();
@@ -34,6 +38,10 @@ void AZorbaGameState::SetActiveMissionId(FName MissionId)
 	{
 		return;
 	}
+	if (ActiveMissionId == MissionId)
+	{
+		return;
+	}
 
 	ActiveMissionId = MissionId;
 	OnRep_ActiveMissionId();
@@ -41,8 +49,10 @@ void AZorbaGameState::SetActiveMissionId(FName MissionId)
 
 void AZorbaGameState::OnRep_SessionPhase()
 {
+	OnSessionPhaseChanged.Broadcast(SessionPhase);
 }
 
 void AZorbaGameState::OnRep_ActiveMissionId()
 {
+	OnActiveMissionChanged.Broadcast(ActiveMissionId);
 }

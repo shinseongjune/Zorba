@@ -1391,10 +1391,19 @@ void AZorbaCharacter::HandleMeleeHit(
 
 	if (RemainingHealth <= 0.0f)
 	{
-		AbilitySystem->AddLooseGameplayTag(
+		const bool bWasAlreadyDead = AbilitySystem->HasMatchingGameplayTag(
 			ZorbaGameplayTags::State_Dead);
-		GetCharacterMovement()->DisableMovement();
-		StopDefend();
+		if (!bWasAlreadyDead)
+		{
+			AbilitySystem->AddLooseGameplayTag(
+				ZorbaGameplayTags::State_Dead);
+			GetCharacterMovement()->DisableMovement();
+			StopDefend();
+			if (HasAuthority())
+			{
+				OnPlayerDied.Broadcast(this, SourceActor);
+			}
+		}
 	}
 
 	if (GetWorld())

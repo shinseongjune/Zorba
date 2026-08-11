@@ -21,6 +21,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Zorba|Campaign")
 	void SetPendingMission(FName MissionId);
 
+	UFUNCTION(BlueprintCallable, Category = "Zorba|Campaign")
+	void ClearPendingMission();
+
 	UFUNCTION(BlueprintPure, Category = "Zorba|Campaign")
 	FName GetCurrentCampaignId() const { return CurrentCampaignId; }
 

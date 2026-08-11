@@ -13,6 +13,7 @@
 
 class UCameraComponent;
 class UAbilitySystemComponent;
+class AZorbaCharacter;
 class AZorbaEnemyCharacter;
 class UInputAction;
 class UInputMappingContext;
@@ -20,6 +21,11 @@ class USpringArmComponent;
 class UStaticMeshComponent;
 struct FInputActionValue;
 class UZorbaMeleeCombatComponent;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FZorbaPlayerDiedSignature,
+	AZorbaCharacter*, PlayerCharacter,
+	AActor*, Killer);
 
 UENUM(BlueprintType)
 enum class EZorbaForbiddenTechniqueFailure : uint8
@@ -70,6 +76,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Zorba|Combat|Forbidden Technique")
 	float GetForbiddenTechniqueSlot1CooldownRemaining() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "Zorba|Mission")
+	FZorbaPlayerDiedSignature OnPlayerDied;
 
 #if !UE_BUILD_SHIPPING
 	void ConfigureDefenseForAutomation(bool bKeepParryWindowOpen);

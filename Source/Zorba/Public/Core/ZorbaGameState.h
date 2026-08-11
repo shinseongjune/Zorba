@@ -7,6 +7,13 @@
 #include "Core/ZorbaSessionTypes.h"
 #include "ZorbaGameState.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FZorbaSessionPhaseChangedSignature,
+	EZorbaSessionPhase, NewPhase);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FZorbaActiveMissionChangedSignature,
+	FName, MissionId);
+
 UCLASS()
 class ZORBA_API AZorbaGameState : public AGameStateBase
 {
@@ -28,6 +35,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Zorba|Session")
 	FName GetActiveMissionId() const { return ActiveMissionId; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Zorba|Session")
+	FZorbaSessionPhaseChangedSignature OnSessionPhaseChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Zorba|Session")
+	FZorbaActiveMissionChangedSignature OnActiveMissionChanged;
 
 private:
 	UFUNCTION()

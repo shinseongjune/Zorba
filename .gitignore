@@ -4,10 +4,29 @@
 # Codex local workspace settings
 .codex/
 
-# Locally licensed Fab content must not be redistributed through this public repository
+# Locally licensed Fab/Marketplace source content must not be redistributed through this public repository.
+# Keep project-owned derivatives under the numbered Zorba folders so they remain eligible for Git LFS.
 /Content/SwordAndShieldAnimationV1/
 /Content/90_ExternalAssets/Marketplace/**/SwordAndShieldAnimationV1/
 /Content/10_Player/Animations/Combat/SwordShield/_RetargetTest/
+/Content/Blood_VFX_Pack/
+/Content/City_Nature_Sounds/
+/Content/Footsteps_Volume_02/
+/Content/FreeModularMagicSFX/
+/Content/Free_Magic/
+/Content/Free_Sounds_Pack/
+/Content/Interface_And_Item_Sounds/
+/Content/Knights_Pack/
+/Content/MaleCharVocLITE/
+/Content/RealisticSwordSoundEffects/
+/Content/Realistic_Starter_VFX_Pack_Vol2/
+/Content/SimpleSwordShieldAnim/
+/Content/SlashTrail_SoftTofu/
+/Content/Sword_and_Shield/
+/Content/WhooshSFXPackLite/
+/Content/__ExternalActors__/Free_Magic/
+/Content/__ExternalObjects__/Free_Magic/
+/Sword_and_Shield.png
 
 # Local backup for plugins disabled because they do not compile with this engine
 .disabled-plugins/

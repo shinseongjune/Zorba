@@ -13,5 +13,6 @@ enum class EZorbaSessionPhase : uint8
 	Campaign UMETA(DisplayName = "Campaign"),
 	MissionLoading UMETA(DisplayName = "Mission Loading"),
 	MissionActive UMETA(DisplayName = "Mission Active"),
-	MissionComplete UMETA(DisplayName = "Mission Complete")
+	MissionComplete UMETA(DisplayName = "Mission Complete"),
+	MissionFailed UMETA(DisplayName = "Mission Failed")
 };

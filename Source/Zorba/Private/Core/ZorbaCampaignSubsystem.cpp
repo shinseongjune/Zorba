@@ -25,3 +25,8 @@ void UZorbaCampaignSubsystem::SetPendingMission(FName MissionId)
 {
 	PendingMissionId = MissionId;
 }
+
+void UZorbaCampaignSubsystem::ClearPendingMission()
+{
+	PendingMissionId = NAME_None;
+}
