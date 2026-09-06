@@ -14,6 +14,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	int32, EnemyCount);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(
 	FZorbaEncounterCompletedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FZorbaRemainingEnemyCountChangedSignature,
+	int32, NewRemainingEnemyCount);
 
 /** Tracks one local combat group and emits the mission-facing clear signal. */
 UCLASS(Blueprintable)
@@ -38,6 +41,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Zorba|Encounter")
 	FZorbaEncounterCompletedSignature OnEncounterCompleted;
+
+	UPROPERTY(BlueprintAssignable, Category = "Zorba|Encounter")
+	FZorbaRemainingEnemyCountChangedSignature OnRemainingEnemyCountChanged;
 
 protected:
 	virtual void BeginPlay() override;

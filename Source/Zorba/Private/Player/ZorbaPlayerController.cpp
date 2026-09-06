@@ -4,6 +4,7 @@
 
 #include "Core/ZorbaGameMode.h"
 #include "Core/ZorbaGameState.h"
+#include "Enemy/ZorbaCombatEncounter.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/ZorbaMissionFlowWidget.h"
 
@@ -16,21 +17,39 @@ AZorbaPlayerController::AZorbaPlayerController()
 void AZorbaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
-	if (IsLocalController())
+
+	if (!IsLocalController())
 	{
-		MissionFlowWidget = CreateWidget<UZorbaMissionFlowWidget>(
-			this,
-			UZorbaMissionFlowWidget::StaticClass());
-		if (MissionFlowWidget)
-		{
-			MissionFlowWidget->AddToViewport(1000);
-		}
-		BindMissionUI();
+		return;
 	}
+
+	if (!MissionFlowWidgetClass)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("Mission UI could not be created: MissionFlowWidgetClass is not set."));
+		return;
+	}
+
+	MissionFlowWidget = CreateWidget<UZorbaMissionFlowWidget>(
+		this,
+		MissionFlowWidgetClass);
+
+	if (!MissionFlowWidget)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("Mission UI could not be created from %s."),
+			*GetNameSafe(MissionFlowWidgetClass.Get()));
+		return;
+	}
+
+	MissionFlowWidget->AddToViewport(1000);
+	BindMissionUI();
 }
 
 void AZorbaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	UnbindMissionEncounter();
+
 	if (BoundGameState)
 	{
 		BoundGameState->OnSessionPhaseChanged.RemoveDynamic(
@@ -139,6 +158,16 @@ void AZorbaPlayerController::HandleSessionPhaseChanged(
 	{
 		MissionFlowWidget->RefreshForPhase(NewPhase);
 	}
+
+	if (NewPhase == EZorbaSessionPhase::MissionActive)
+	{
+		BindMissionEncounter();
+	}
+	else
+	{
+		UnbindMissionEncounter();
+	}
+
 	ApplyMissionInputMode(NewPhase);
 }
 
@@ -164,6 +193,51 @@ void AZorbaPlayerController::ApplyMissionInputMode(
 	ResetIgnoreMoveInput();
 	ResetIgnoreLookInput();
 	SetInputMode(FInputModeGameOnly());
+}
+
+void AZorbaPlayerController::BindMissionEncounter()
+{
+	UnbindMissionEncounter();
+
+	BoundEncounter = Cast<AZorbaCombatEncounter>(
+		UGameplayStatics::GetActorOfClass(
+			this,
+			AZorbaCombatEncounter::StaticClass()));
+
+	if (!IsValid(BoundEncounter.Get()))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("Mission UI could not bind: Combat encounter is missing."));
+		return;
+	}
+
+	BoundEncounter->OnRemainingEnemyCountChanged.AddUniqueDynamic(
+		this,
+		&AZorbaPlayerController::HandleRemainingEnemyCountChanged);
+
+	HandleRemainingEnemyCountChanged(
+		BoundEncounter->GetRemainingEnemyCount());
+}
+
+void AZorbaPlayerController::UnbindMissionEncounter()
+{
+	if (IsValid(BoundEncounter.Get()))
+	{
+		BoundEncounter->OnRemainingEnemyCountChanged.RemoveDynamic(
+			this,
+			&AZorbaPlayerController::HandleRemainingEnemyCountChanged);
+	}
+
+	BoundEncounter = nullptr;
+}
+
+void AZorbaPlayerController::HandleRemainingEnemyCountChanged(
+	int32 NewRemainingEnemyCount)
+{
+	if (IsValid(MissionFlowWidget.Get()))
+	{
+		MissionFlowWidget->RefreshProgress(NewRemainingEnemyCount);
+	}
 }
 
 void AZorbaPlayerController::ServerStartDefaultMission_Implementation()

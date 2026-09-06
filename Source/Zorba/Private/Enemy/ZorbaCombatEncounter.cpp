@@ -85,6 +85,7 @@ void AZorbaCombatEncounter::StartEncounter()
 		*EncounterId.ToString(),
 		RemainingEnemyCount);
 	OnEncounterStarted.Broadcast(RemainingEnemyCount);
+	OnRemainingEnemyCountChanged.Broadcast(RemainingEnemyCount);
 
 #if !UE_BUILD_SHIPPING
 	ConfigureCrowdAutomation();
@@ -105,6 +106,7 @@ void AZorbaCombatEncounter::HandleEnemyDied(
 		this,
 		&AZorbaCombatEncounter::HandleEnemyDied);
 	RemainingEnemyCount = FMath::Max(0, RemainingEnemyCount - 1);
+	OnRemainingEnemyCountChanged.Broadcast(RemainingEnemyCount);
 	UE_LOG(
 		LogTemp,
 		Display,

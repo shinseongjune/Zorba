@@ -8,6 +8,7 @@
 #include "ZorbaPlayerController.generated.h"
 
 class AZorbaGameState;
+class AZorbaCombatEncounter;
 class UZorbaMissionFlowWidget;
 
 UCLASS()
@@ -38,9 +39,18 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void SetupInputComponent() override;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Zorba|UI")
+	TSubclassOf<UZorbaMissionFlowWidget> MissionFlowWidgetClass;
+
 private:
 	void BindMissionUI();
 	void ApplyMissionInputMode(EZorbaSessionPhase NewPhase);
+
+	void BindMissionEncounter();
+	void UnbindMissionEncounter();
+
+	UFUNCTION()
+	void HandleRemainingEnemyCountChanged(int32 NewRemainingEnemyCount);
 
 	UFUNCTION()
 	void HandleSessionPhaseChanged(EZorbaSessionPhase NewPhase);
@@ -59,4 +69,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AZorbaGameState> BoundGameState;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AZorbaCombatEncounter> BoundEncounter;
 };
